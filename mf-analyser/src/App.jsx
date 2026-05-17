@@ -537,7 +537,10 @@ function Dropdown({items,onSelect,styles,t}){
         <div key={su.schemeCode} style={styles.ditem}
           onMouseEnter={e=>e.currentTarget.style.backgroundColor=t.chip}
           onMouseLeave={e=>e.currentTarget.style.backgroundColor="transparent"}
-          onClick={()=>onSelect(su.schemeCode)}>
+          onMouseDown={e=>{
+            e.preventDefault(); // prevent outside-click handler from firing first
+            onSelect(su.schemeCode);
+          }}>
           <span style={{flex:1,paddingRight:8,lineHeight:1.4}}>{su.schemeName}</span>
           <span style={{color:t.textMuted,fontSize:11,whiteSpace:"nowrap"}}>#{su.schemeCode}</span>
         </div>
@@ -587,6 +590,8 @@ export default function App(){
   const searchRef=useRef(null),cmpSearchRef=useRef(null);
 
   useEffect(()=>{
+    // Use mousedown so we can detect outside clicks,
+    // but Dropdown items use e.preventDefault() on mousedown to win the race
     const h=e=>{
       if(searchRef.current&&!searchRef.current.contains(e.target))setSuggestions([]);
       if(cmpSearchRef.current&&!cmpSearchRef.current.contains(e.target))setCmpSugg([]);
@@ -606,7 +611,8 @@ export default function App(){
   };
 
   const loadFund=async code=>{
-    setLoading(true);setError(null);setSuggestions([]);setQuery("");setSipResult(null);
+    setSuggestions([]); // clear immediately on select
+    setLoading(true);setError(null);setQuery("");setSipResult(null);
     try{
       const j=await fetchWithProxy(`https://api.mfapi.in/mf/${code}`);
       if(!j?.data?.length)throw new Error("No NAV data");
@@ -627,12 +633,17 @@ export default function App(){
   };
 
   const addCmpFund=async code=>{
-    if(cmpFunds.length>=6)return;
-    setCmpLoading(true);setCmpSugg([]);setCmpQuery("");
+    if(cmpFunds.length>=6) return;
+    // prevent duplicates
+    if(cmpFunds.some(f=>f.meta?.scheme_code===String(code)||f.raw?.[0]?.schemeCode===code)) return;
+    setCmpLoading(true); setCmpSugg([]); setCmpQuery("");
     try{
       const j=await fetchWithProxy(`https://api.mfapi.in/mf/${code}`);
-      if(j?.data?.length){const asc=preprocess(j.data);setCmpFunds(p=>[...p,{meta:j.meta,raw:j.data,asc}]);}
-    }catch{}
+      if(j?.data?.length){
+        const asc=preprocess(j.data);
+        setCmpFunds(p=>[...p,{meta:j.meta,raw:j.data,asc}]);
+      }
+    }catch(e){ console.error("addCmpFund error:",e); }
     setCmpLoading(false);
   };
 
