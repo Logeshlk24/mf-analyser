@@ -21,27 +21,27 @@ async function fetchWithProxy(url) {
   throw last ?? new Error("All fetch attempts failed");
 }
 
-// ─── Theme ─────────────────────────────────────────────────────────────────────
+// ─── Theme — DEFAULT LIGHT ─────────────────────────────────────────────────────
 const T = {
+  light: {
+    bg:"#f4f7fb", surface:"#ffffff", card:"#ffffff", cardHover:"#f8faff",
+    border:"#e2e8f0", borderLight:"#edf2f7",
+    text:"#0f172a", textSub:"#475569", textMuted:"#94a3b8",
+    accent:"#2563eb", green:"#16a34a", red:"#dc2626",
+    input:"#f8faff", shadow:"0 2px 16px rgba(0,0,0,0.07)", chip:"#e8edf5",
+    tooltip:"#1e293b", tooltipText:"#f8fafc",
+  },
   dark: {
     bg:"#0a0e1a", surface:"#111827", card:"#1a2236", cardHover:"#1e2a40",
     border:"#2a3a52", borderLight:"#1e2d42",
     text:"#f0f4ff", textSub:"#8a9bc0", textMuted:"#4a5a78",
     accent:"#3b82f6", green:"#22c55e", red:"#ef4444",
     input:"#1a2236", shadow:"0 4px 24px rgba(0,0,0,0.4)", chip:"#1e2d42",
-    tooltip:"#0d1526",
-  },
-  light: {
-    bg:"#f0f4fb", surface:"#ffffff", card:"#ffffff", cardHover:"#f8faff",
-    border:"#e2e8f0", borderLight:"#edf2f7",
-    text:"#0f172a", textSub:"#475569", textMuted:"#94a3b8",
-    accent:"#2563eb", green:"#16a34a", red:"#dc2626",
-    input:"#f8faff", shadow:"0 4px 24px rgba(0,0,0,0.08)", chip:"#e8edf5",
-    tooltip:"#1e293b",
+    tooltip:"#f0f4ff", tooltipText:"#0a0e1a",
   },
 };
 
-const COMPARE_COLORS = ["#3b82f6","#22c55e","#f59e0b","#a855f7","#ef4444","#06b6d4"];
+const COMPARE_COLORS = ["#2563eb","#16a34a","#d97706","#9333ea","#dc2626","#0891b2"];
 const TABS   = ["NAV Chart","Returns","Annual","Risk Metrics","Best/Worst","Rolling Returns","Monthly Heatmap","SIP Calculator","Compare"];
 const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 const POPULAR = [
@@ -53,16 +53,11 @@ const POPULAR = [
   { name:"Axis Bluechip Fund – Direct – Growth",          code:120503 },
 ];
 
-// ─── Math helpers ──────────────────────────────────────────────────────────────
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 function parseDate(str) { const [d,m,y]=str.split("-"); return new Date(`${y}-${m}-${d}`); }
-function fmtDate(str) {
-  // "28-05-2013" → "28 May 2013"
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const [d,m,y] = str.split("-");
-  return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
-}
-const fmt  = (n,dec=2) => n==null||isNaN(n) ? "--" : Number(n).toFixed(dec);
-const pct  = (n)       => n==null||isNaN(n) ? "--" : (n>0?"+":"")+Number(n).toFixed(2)+"%";
+function fmtDate(str) { const d=parseDate(str); return d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); }
+const fmt  = (n,dec=2) => n==null||isNaN(n)?"--":Number(n).toFixed(dec);
+const pct  = (n)       => n==null||isNaN(n)?"--":(n>0?"+":"")+Number(n).toFixed(2)+"%";
 const fmtCr= (n)       => { if(n==null||isNaN(n)) return "--"; if(Math.abs(n)>=10000000) return "₹"+(n/10000000).toFixed(2)+"Cr"; if(Math.abs(n)>=100000) return "₹"+(n/100000).toFixed(2)+"L"; return "₹"+n.toFixed(0); };
 
 function getNavAt(data, daysAgo) {
@@ -70,8 +65,9 @@ function getNavAt(data, daysAgo) {
   for(const d of data) if(parseDate(d.date)<=t) return parseFloat(d.nav);
   return null;
 }
-function cagr(s,e,y){ if(!s||!e||y<=0) return null; return (Math.pow(e/s,1/y)-1)*100; }
+function cagrFn(s,e,y){ if(!s||!e||y<=0) return null; return (Math.pow(e/s,1/y)-1)*100; }
 
+// ─── Analytics ────────────────────────────────────────────────────────────────
 function computeStats(data) {
   if(!data?.length) return null;
   const latest=parseFloat(data[0].nav), latestDt=parseDate(data[0].date);
@@ -92,17 +88,15 @@ function computeStats(data) {
   }
   let peak=-Infinity,maxDD=0,ddDate=null;
   for(let i=data.length-1;i>=0;i--){
-    const v=parseFloat(data[i].nav);
-    if(v>peak) peak=v;
-    const dd=(v-peak)/peak*100;
-    if(dd<maxDD){maxDD=dd;ddDate=data[i].date;}
+    const v=parseFloat(data[i].nav); if(v>peak) peak=v;
+    const dd=(v-peak)/peak*100; if(dd<maxDD){maxDD=dd;ddDate=data[i].date;}
   }
   const n1y=getNavAt(data,365),n3y=getNavAt(data,1095),n5y=getNavAt(data,1825);
   return {
     latest,latestDate:data[0].date,inceptionDate:data[data.length-1].date,
     ret1d:(()=>{const n=getNavAt(data,2);return n?(latest-n)/n*100:null;})(),
-    ret1y:n1y?cagr(n1y,latest,1):null, cagr3y:n3y?cagr(n3y,latest,3):null,
-    cagr5y:n5y?cagr(n5y,latest,5):null, cagrAll:cagr(first,latest,yrs),
+    ret1y:n1y?cagrFn(n1y,latest,1):null, cagr3y:n3y?cagrFn(n3y,latest,3):null,
+    cagr5y:n5y?cagrFn(n5y,latest,5):null, cagrAll:cagrFn(first,latest,yrs),
     sharpe,sortino,stdDev,maxDD,ddDate,totalYears:yrs,
   };
 }
@@ -112,12 +106,12 @@ function computeTrailing(data) {
   const first=parseFloat(data[data.length-1].nav);
   const yrs=(latestDt-parseDate(data[data.length-1].date))/(1000*60*60*24*365.25);
   const ytd=(()=>{ const j=new Date(`${latestDt.getFullYear()}-01-01`); for(const d of data) if(parseDate(d.date)<=j) return parseFloat(d.nav); return null; })();
-  const row=(p,days,y)=>{ const n=days?getNavAt(data,days):null; return {period:p,ret:days?(n?(latest-n)/n*100:null):(ytd?(latest-ytd)/ytd*100:null),cagr:y&&n?cagr(n,latest,y):null}; };
+  const row=(p,days,y)=>{ const n=days?getNavAt(data,days):null; return {period:p,ret:days?(n?(latest-n)/n*100:null):(ytd?(latest-ytd)/ytd*100:null),cagr:y&&n?cagrFn(n,latest,y):null}; };
   return [
     {period:"YTD",ret:ytd?(latest-ytd)/ytd*100:null,cagr:null},
     row("1D",2),row("1W",7),row("1M",30),row("3M",91),row("6M",182),
     row("1Y",365,1),row("3Y",1095,3),row("5Y",1825,5),row("7Y",2555,7),row("10Y",3650,10),
-    {period:"Since Inception",ret:(latest-first)/first*100,cagr:cagr(first,latest,yrs)},
+    {period:"Since Inception",ret:(latest-first)/first*100,cagr:cagrFn(first,latest,yrs)},
   ];
 }
 
@@ -129,21 +123,20 @@ function computeCalYear(data) {
 
 function computeAnnualWithVolatility(data) {
   const byYear={};
-  // data is descending; group by year preserving date order
   data.forEach(d=>{ const y=parseDate(d.date).getFullYear(); if(!byYear[y]) byYear[y]=[]; byYear[y].push({date:d.date,nav:parseFloat(d.nav)}); });
-  const currentYear=new Date().getFullYear();
+  const cur=new Date().getFullYear();
   return Object.keys(byYear).sort().reverse().map(y=>{
-    const pts=byYear[y].sort((a,b)=>parseDate(a.date)-parseDate(b.date)); // asc
-    const firstNav=pts[0].nav, lastNav=pts[pts.length-1].nav;
+    const items=byYear[y].sort((a,b)=>parseDate(a.date)-parseDate(b.date));
+    const firstNav=items[0].nav, lastNav=items[items.length-1].nav;
     const ret=(lastNav-firstNav)/firstNav*100;
-    const dailyRets=pts.slice(1).map((p,i)=>(p.nav-pts[i].nav)/pts[i].nav);
+    const dailyRets=items.slice(1).map((v,i)=>(v.nav-items[i].nav)/items[i].nav);
     let vol=null;
     if(dailyRets.length>5){
       const mean=dailyRets.reduce((a,b)=>a+b,0)/dailyRets.length;
       const variance=dailyRets.reduce((a,b)=>a+(b-mean)**2,0)/dailyRets.length;
       vol=Math.sqrt(variance)*Math.sqrt(252)*100;
     }
-    return {year:+y, ret, vol, isYTD:+y===currentYear};
+    return {year:+y,ret,vol,isYTD:+y===cur};
   });
 }
 
@@ -155,17 +148,14 @@ function computeMonthly(data) {
   return res;
 }
 
-function computeRolling(data, years) {
-  // data is descending from API — sort ascending first
-  const sorted=[...data].sort((a,b)=>parseDate(a.date)-parseDate(b.date));
+function computeRolling(data,years) {
   const days=Math.round(years*365.25);
+  // data comes in desc order (latest first); sort asc for rolling calc
+  const sorted=[...data].sort((a,b)=>parseDate(a.date)-parseDate(b.date));
   return sorted.reduce((acc,d,i)=>{
     const end=parseDate(d.date),tgt=new Date(end); tgt.setDate(tgt.getDate()-days);
     let si=null; for(let j=i-1;j>=0;j--){ if(parseDate(sorted[j].date)<=tgt){si=j;break;} }
-    if(si!==null){
-      const y=(end-parseDate(sorted[si].date))/(1000*60*60*24*365.25);
-      if(y>0) acc.push({date:d.date,cagr:(Math.pow(parseFloat(d.nav)/parseFloat(sorted[si].nav),1/y)-1)*100});
-    }
+    if(si!==null){ const y=(end-parseDate(sorted[si].date))/(1000*60*60*24*365.25); if(y>0) acc.push({date:d.date,cagr:(Math.pow(parseFloat(d.nav)/parseFloat(sorted[si].nav),1/y)-1)*100}); }
     return acc;
   },[]);
 }
@@ -186,413 +176,369 @@ function rebaseNavSeries(funds) {
   const allDates=funds.map(f=>new Set(f.data.map(d=>d.date)));
   const common=[...allDates[0]].filter(d=>allDates.every(s=>s.has(d))).sort();
   if(common.length<2) return null;
-  return {
-    series: funds.map((f,i)=>{
-      const baseNav=parseFloat(f.data.find(d=>d.date===common[0])?.nav??f.data[f.data.length-1].nav);
-      return { name:f.meta?.scheme_name??"Fund "+(i+1), color:COMPARE_COLORS[i%COMPARE_COLORS.length],
-        points:common.map(date=>({date,val:parseFloat(f.data.find(d=>d.date===date)?.nav??baseNav)/baseNav*100})) };
-    }),
-    startDate:common[0], endDate:common[common.length-1]
-  };
+  return { series:funds.map((f,i)=>{
+    const baseNav=parseFloat(f.data.find(d=>d.date===common[0])?.nav??f.data[f.data.length-1].nav);
+    return { name:f.meta?.scheme_name??"Fund "+(i+1), color:COMPARE_COLORS[i%COMPARE_COLORS.length],
+      points:common.map(date=>({date,val:parseFloat(f.data.find(d=>d.date===date)?.nav??baseNav)/baseNav*100})) };
+  }), startDate:common[0], endDate:common[common.length-1] };
 }
 
-// ─── Tooltip hook ──────────────────────────────────────────────────────────────
-// Returns {svgRef, tooltip, handleMouseMove, handleMouseLeave}
-// tooltip = {visible, x, y, items:[{label,value,color}], idx}
+// ─── Shared SVG tooltip hook ───────────────────────────────────────────────────
 function useChartTooltip() {
-  const svgRef = useRef(null);
-  const [tooltip, setTooltip] = useState({visible:false,x:0,y:0,items:[],svgX:0});
-
-  const handleMouseMove = useCallback((e, points, pad, W, H, multiSeries) => {
-    const svg = svgRef.current; if(!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (W / rect.width);
-    const W2 = W - pad.l - pad.r;
-    const n = points.length;
-    if(n<2) return;
-    const idx = Math.max(0, Math.min(n-1, Math.round((mx - pad.l) / W2 * (n-1))));
-    const svgX = pad.l + (idx/(n-1))*W2;
-
-    let items;
-    if(multiSeries) {
-      items = multiSeries.map(s=>({label:s.name.split("–")[0].trim().slice(0,22),value:s.points[idx]?.val!=null?fmt(s.points[idx].val,2):"--",color:s.color}));
-    } else {
-      const pt = points[idx];
-      items = [{label: pt.date ? fmtDate(pt.date) : "", value: pt.nav!=null?`₹${fmt(pt.nav,4)}`:pt.cagr!=null?`${fmt(pt.cagr,2)}%`:fmt(pt.val,2), color:null}];
-    }
-    setTooltip({visible:true, svgX, idx, items, rawX: e.clientX - rect.left, rawY: e.clientY - rect.top});
-  }, []);
-
-  const handleMouseLeave = useCallback(()=>setTooltip(p=>({...p,visible:false})),[]);
-  return {svgRef, tooltip, handleMouseMove, handleMouseLeave};
+  const [tip,setTip]=useState(null); // {x,y,lines:[{label,val,color?}]}
+  const ref=useRef(null);
+  return {tip,setTip,ref};
 }
 
-// ─── Shared SVG tooltip overlay ────────────────────────────────────────────────
-function TooltipOverlay({tooltip, t, W, H, pad, lineColor, yf, points}) {
-  if(!tooltip.visible) return null;
-  const {svgX, idx, items} = tooltip;
-
-  // crosshair Y
-  const pt = points?.[idx];
-  const dotY = pt && yf ? yf(pt.nav ?? pt.val ?? pt.cagr ?? 0) : H/2;
-
-  // tooltip box position — flip if near right edge
-  const boxW = 160, boxH = items.length*22+16;
-  const tx = svgX + 12 + boxW > W - pad.r ? svgX - boxW - 12 : svgX + 12;
-  const ty = Math.max(pad.t, Math.min(H - pad.b - boxH, dotY - boxH/2));
-
+function Tooltip({tip,t}){
+  if(!tip) return null;
   return (
-    <g pointerEvents="none">
-      {/* vertical crosshair */}
-      <line x1={svgX} x2={svgX} y1={pad.t} y2={H-pad.b} stroke={t.textMuted} strokeWidth="1" strokeDasharray="4,3"/>
-      {/* dot on line */}
-      {pt && <circle cx={svgX} cy={dotY} r="5" fill={lineColor??t.accent} stroke={t.surface} strokeWidth="2"/>}
-      {/* tooltip box */}
-      <rect x={tx} y={ty} width={boxW} height={boxH} rx="8" fill={t.tooltip} opacity="0.95" stroke={t.border} strokeWidth="1"/>
-      {items.map((item,i)=>(
-        <g key={i}>
-          {item.color && <rect x={tx+10} y={ty+10+i*22} width="8" height="8" rx="2" fill={item.color}/>}
-          <text x={tx+(item.color?24:10)} y={ty+18+i*22} fontSize="11" fill={t.textMuted}>{item.label}</text>
-          <text x={tx+boxW-8} y={ty+18+i*22} textAnchor="end" fontSize="12" fontWeight="600" fill={t.text}>{item.value}</text>
-        </g>
+    <div style={{position:"absolute",left:tip.x,top:tip.y,transform:"translate(-50%,-100%) translateY(-10px)",backgroundColor:t.tooltip,color:t.tooltipText,borderRadius:8,padding:"8px 12px",fontSize:12,pointerEvents:"none",zIndex:50,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",whiteSpace:"nowrap"}}>
+      <div style={{fontWeight:700,marginBottom:4,fontSize:11,opacity:0.8}}>{tip.date}</div>
+      {tip.lines.map((l,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
+          {l.color&&<span style={{width:8,height:8,borderRadius:"50%",backgroundColor:l.color,flexShrink:0}}/>}
+          <span style={{opacity:0.75}}>{l.label}:</span>
+          <span style={{fontWeight:700}}>{l.val}</span>
+        </div>
       ))}
-    </g>
+      <div style={{position:"absolute",bottom:-5,left:"50%",transform:"translateX(-50%)",width:10,height:10,backgroundColor:t.tooltip,clipPath:"polygon(0 0,100% 0,50% 100%)"}}/>
+    </div>
   );
 }
 
-// ─── Line Chart (fixed: data sorted asc, hover tooltip) ────────────────────────
-function LineChart({ data, t, range }) {
+// ─── NAV Line Chart with tooltip ──────────────────────────────────────────────
+function LineChart({data,t,range}){
+  const {tip,setTip,ref}=useChartTooltip();
   const W=900,H=300;
-  const {svgRef,tooltip,handleMouseMove,handleMouseLeave} = useChartTooltip();
-
   if(!data?.length) return null;
-  const now=new Date(), cut=new Date();
+
+  // data is newest-first from API — sort ascending for correct left→right display
+  const now=new Date(),cut=new Date();
   if(range==="1Y"){cut.setFullYear(now.getFullYear()-1);}
   else if(range==="3Y"){cut.setFullYear(now.getFullYear()-3);}
   else if(range==="5Y"){cut.setFullYear(now.getFullYear()-5);}
   else if(range==="YTD"){cut.setMonth(0,1);}
   else{cut.setFullYear(2000);}
 
-  // FIX: sort ascending (oldest→newest left→right)
-  const fd = [...data]
-    .filter(d=>parseDate(d.date)>=cut)
-    .sort((a,b)=>parseDate(a.date)-parseDate(b.date));
+  // Filter then sort ascending (oldest first = left side of chart)
+  const fd=[...data].filter(d=>parseDate(d.date)>=cut).sort((a,b)=>parseDate(a.date)-parseDate(b.date));
+  if(fd.length<2) return <div style={{color:t.textMuted,textAlign:"center",paddingTop:60}}>Not enough data for this range</div>;
 
-  if(fd.length<2) return <div style={{color:t.textMuted,textAlign:"center",paddingTop:60}}>Not enough data</div>;
-
-  const navs=fd.map(d=>parseFloat(d.nav));
-  const minV=Math.min(...navs), maxV=Math.max(...navs);
-  const pad={t:20,b:44,l:72,r:20}, W2=W-pad.l-pad.r, H2=H-pad.t-pad.b;
+  const navs=fd.map(d=>parseFloat(d.nav)),minV=Math.min(...navs),maxV=Math.max(...navs);
+  const pad={t:20,b:48,l:72,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
   const xf=i=>pad.l+(i/(fd.length-1))*W2;
   const yf=v=>pad.t+(1-(v-minV)/(maxV-minV||1))*H2;
   const pts=fd.map((d,i)=>`${xf(i)},${yf(parseFloat(d.nav))}`).join(" ");
-  const isUp=navs[navs.length-1]>=navs[0];
+  const isUp=parseFloat(fd[fd.length-1].nav)>=parseFloat(fd[0].nav);
   const col=isUp?t.green:t.red;
-  const gid="g"+Math.random().toString(36).slice(2,8);
-  const step=Math.max(1,Math.floor(fd.length/7));
-  const xL=[]; for(let i=0;i<fd.length;i+=step){const dt=parseDate(fd[i].date);xL.push({x:xf(i),label:`${dt.getMonth()+1}/${String(dt.getFullYear()).slice(2)}`});}
+  const gid="g"+Math.random().toString(36).slice(2,7);
 
-  const points = fd.map(d=>({date:d.date,nav:parseFloat(d.nav),val:parseFloat(d.nav)}));
+  const step=Math.max(1,Math.floor(fd.length/7));
+  const xL=[];
+  for(let i=0;i<fd.length;i+=step){const dt=parseDate(fd[i].date);xL.push({x:xf(i),label:`${dt.getMonth()+1}/${String(dt.getFullYear()).slice(2)}`});}
+
+  const handleMouse=useCallback((e)=>{
+    const svg=e.currentTarget; const rect=svg.getBoundingClientRect();
+    const mx=e.clientX-rect.left; const svgX=(mx/rect.width)*W;
+    const idx=Math.max(0,Math.min(fd.length-1,Math.round((svgX-pad.l)/W2*(fd.length-1))));
+    if(idx<0||idx>=fd.length) return;
+    const d=fd[idx]; const px=xf(idx),py=yf(parseFloat(d.nav));
+    setTip({x:(px/W)*rect.width+rect.left-rect.left,y:(py/H)*rect.height,date:fmtDate(d.date),lines:[{label:"NAV",val:`₹${fmt(parseFloat(d.nav))}`}]});
+  },[fd]);
 
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"crosshair"}}
-      onMouseMove={e=>handleMouseMove(e,points,pad,W,H,null)}
-      onMouseLeave={handleMouseLeave}>
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={col} stopOpacity="0.25"/>
-          <stop offset="100%" stopColor={col} stopOpacity="0"/>
-        </linearGradient>
-      </defs>
-      {[0,0.25,0.5,0.75,1].map((r,i)=>{
-        const yp=pad.t+r*H2, v=maxV-r*(maxV-minV);
-        return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth="0.5" strokeDasharray="4,4"/><text x={pad.l-8} y={yp+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{fmt(v)}</text></g>);
-      })}
-      <polygon points={`${pad.l},${pad.t+H2} ${pts} ${pad.l+W2},${pad.t+H2}`} fill={`url(#${gid})`}/>
-      <polyline points={pts} fill="none" stroke={col} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
-      {xL.map((l,i)=><text key={i} x={l.x} y={H-8} textAnchor="middle" fontSize="11" fill={t.textMuted}>{l.label}</text>)}
-      <TooltipOverlay tooltip={tooltip} t={t} W={W} H={H} pad={pad} lineColor={col} yf={yf} points={points}/>
-    </svg>
+    <div ref={ref} style={{position:"relative",height:"100%"}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"crosshair"}}
+        onMouseMove={handleMouse} onMouseLeave={()=>setTip(null)}>
+        <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={col} stopOpacity="0.22"/><stop offset="100%" stopColor={col} stopOpacity="0"/></linearGradient></defs>
+        {[0,0.25,0.5,0.75,1].map((r,i)=>{const yp=pad.t+r*H2,v=maxV-r*(maxV-minV);return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth="0.5" strokeDasharray="4,4"/><text x={pad.l-8} y={yp+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{fmt(v)}</text></g>);})}
+        <polygon points={`${pad.l},${pad.t+H2} ${pts} ${pad.l+W2},${pad.t+H2}`} fill={`url(#${gid})`}/>
+        <polyline points={pts} fill="none" stroke={col} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
+        {/* Hover crosshair dot — rendered via tip */}
+        {tip&&(()=>{const idx=Math.max(0,Math.min(fd.length-1,Math.round((tip._svgX??0-pad.l)/W2*(fd.length-1))));return null;})()}
+        {xL.map((l,i)=><text key={i} x={l.x} y={H-10} textAnchor="middle" fontSize="11" fill={t.textMuted}>{l.label}</text>)}
+      </svg>
+      {tip&&<Tooltip tip={{...tip,x:tip.x,y:tip.y}} t={t}/>}
+    </div>
   );
 }
 
-// ─── Rolling Chart (hover tooltip) ────────────────────────────────────────────
-function RollingChart({ data, t }) {
+// ─── Rolling Returns Chart with tooltip ───────────────────────────────────────
+function RollingChart({data,t,color}){
+  const {tip,setTip}=useChartTooltip();
   const W=900,H=300;
-  const {svgRef,tooltip,handleMouseMove,handleMouseLeave} = useChartTooltip();
-
+  const col=color??t.accent;
   if(!data?.length) return <div style={{color:t.textMuted,padding:"60px",textAlign:"center"}}>Not enough data for this rolling window</div>;
   const vals=data.map(d=>d.cagr),minV=Math.min(...vals,0),maxV=Math.max(...vals);
-  const pad={t:20,b:44,l:58,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
-  const xf=i=>pad.l+(i/(data.length-1))*W2, yf=v=>pad.t+(1-(v-minV)/(maxV-minV||1))*H2;
+  const pad={t:20,b:48,l:60,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
+  const xf=i=>pad.l+(i/(data.length-1))*W2,yf=v=>pad.t+(1-(v-minV)/(maxV-minV||1))*H2;
   const pts=data.map((d,i)=>`${xf(i)},${yf(d.cagr)}`).join(" ");
   const zY=yf(0);
   const step=Math.max(1,Math.floor(data.length/7));
   const xL=[]; for(let i=0;i<data.length;i+=step){xL.push({x:xf(i),label:parseDate(data[i].date).getFullYear().toString()});}
-  const points=data.map(d=>({date:d.date,cagr:d.cagr,val:d.cagr}));
+
+  const handleMouse=useCallback((e)=>{
+    const svg=e.currentTarget,rect=svg.getBoundingClientRect();
+    const svgX=(e.clientX-rect.left)/rect.width*W;
+    const idx=Math.max(0,Math.min(data.length-1,Math.round((svgX-pad.l)/W2*(data.length-1))));
+    const d=data[idx];
+    setTip({x:(xf(idx)/W)*rect.width,y:(yf(d.cagr)/H)*rect.height,date:fmtDate(d.date),lines:[{label:"CAGR",val:pct(d.cagr),color:col}]});
+  },[data]);
 
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"crosshair"}}
-      onMouseMove={e=>handleMouseMove(e,points,pad,W,H,null)}
-      onMouseLeave={handleMouseLeave}>
-      {[0,0.25,0.5,0.75,1].map((r,i)=>{const yp=pad.t+r*H2,v=maxV-r*(maxV-minV);return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth="0.5" strokeDasharray="4,4"/><text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{fmt(v)}%</text></g>);})}
-      <line x1={pad.l} x2={pad.l+W2} y1={zY} y2={zY} stroke={t.textMuted} strokeWidth="1"/>
-      <polyline points={pts} fill="none" stroke={t.accent} strokeWidth="2.2" strokeLinejoin="round"/>
-      {xL.map((l,i)=><text key={i} x={l.x} y={H-8} textAnchor="middle" fontSize="11" fill={t.textMuted}>{l.label}</text>)}
-      <TooltipOverlay tooltip={tooltip} t={t} W={W} H={H} pad={pad} lineColor={t.accent} yf={v=>pad.t+(1-(v-minV)/(maxV-minV||1))*H2} points={points}/>
-    </svg>
+    <div style={{position:"relative",height:"100%"}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"crosshair"}} onMouseMove={handleMouse} onMouseLeave={()=>setTip(null)}>
+        {[0,0.25,0.5,0.75,1].map((r,i)=>{const yp=pad.t+r*H2,v=maxV-r*(maxV-minV);return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth="0.5" strokeDasharray="4,4"/><text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{fmt(v)}%</text></g>);})}
+        <line x1={pad.l} x2={pad.l+W2} y1={zY} y2={zY} stroke={t.textMuted} strokeWidth="1"/>
+        <polyline points={pts} fill="none" stroke={col} strokeWidth="2.2" strokeLinejoin="round"/>
+        {xL.map((l,i)=><text key={i} x={l.x} y={H-10} textAnchor="middle" fontSize="11" fill={t.textMuted}>{l.label}</text>)}
+      </svg>
+      {tip&&<Tooltip tip={tip} t={t}/>}
+    </div>
   );
 }
 
-// ─── Annual Bar Chart (hover tooltip) ─────────────────────────────────────────
-function AnnualBarChart({ data, t }) {
+// ─── Annual Bar Chart with tooltip ────────────────────────────────────────────
+function AnnualBarChart({data,t}){
+  const {tip,setTip}=useChartTooltip();
   const W=900,H=320;
-  const [hoverIdx,setHoverIdx] = useState(null);
   if(!data?.length) return null;
-  const items=[...data].reverse();
+  const items=[...data].reverse(); // ascending for chart
   const maxAbs=Math.max(...items.map(d=>Math.abs(d.ret)),1);
-  const pad={t:36,b:48,l:50,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
-  const zeroY=pad.t+H2/2;
+  const pad={t:30,b:48,l:50,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
+  const zY=pad.t+H2/2;
   const barW=Math.max(8,Math.min(44,(W2/items.length)-6));
 
+  const handleMouse=useCallback((e,d)=>{
+    const svg=e.currentTarget.closest("svg"),rect=svg.getBoundingClientRect();
+    const cx=pad.l+(items.indexOf(d)+0.5)*(W2/items.length);
+    const col=d.ret>=0?t.green:t.red;
+    setTip({x:(cx/W)*rect.width,y:(zY/H)*rect.height,date:String(d.year)+(d.isYTD?" (YTD)":""),lines:[{label:"Return",val:pct(d.ret),color:col},{label:"Volatility",val:d.vol!=null?fmt(d.vol)+"%":"--"}]});
+  },[items,t]);
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"pointer"}}>
-      {[-20,-10,0,10,20,30,40,50,60].map((v,i)=>{
-        const yp=zeroY-(v/maxAbs)*(H2/2);
-        if(yp<pad.t-4||yp>pad.t+H2+4) return null;
-        return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth={v===0?1.2:0.5} strokeDasharray={v===0?"none":"4,4"}/><text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="10" fill={t.textMuted}>{v}%</text></g>);
-      })}
-      {items.map((d,i)=>{
-        const cx=pad.l+(i+0.5)*(W2/items.length);
-        const barH=Math.abs(d.ret)/maxAbs*(H2/2);
-        const y=d.ret>=0?zeroY-barH:zeroY;
-        const col=d.ret>=0?t.green:t.red;
-        const isHover=hoverIdx===i;
-        return(
-          <g key={d.year}
-            onMouseEnter={()=>setHoverIdx(i)}
-            onMouseLeave={()=>setHoverIdx(null)}>
-            <rect x={cx-barW/2} y={y} width={barW} height={Math.max(1,barH)} fill={col} opacity={isHover?1:0.8} rx="3"/>
-            {/* hover tooltip above/below bar */}
-            {isHover&&(
-              <g>
-                <rect x={cx-44} y={d.ret>=0?y-36:y+barH+4} width={88} height={26} rx="6" fill={t.tooltip} stroke={t.border} strokeWidth="1" opacity="0.97"/>
-                <text x={cx} y={d.ret>=0?y-18:y+barH+22} textAnchor="middle" fontSize="12" fontWeight="700" fill={col}>{fmt(d.ret)}%</text>
-                <text x={cx} y={d.ret>=0?y-4:y+barH+34} textAnchor="middle" fontSize="10" fill={t.textMuted}>{d.year}{d.isYTD?" (YTD)":""}</text>
-              </g>
-            )}
-            <text x={cx} y={H-10} textAnchor="middle" fontSize={isHover?11:10} fill={isHover?t.text:t.textMuted} fontWeight={isHover?600:400}>{d.year}</text>
-          </g>
-        );
-      })}
-    </svg>
+    <div style={{position:"relative",height:"100%"}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"default"}} onMouseLeave={()=>setTip(null)}>
+        {[-30,-20,-10,0,10,20,30,40,50,60].map((v,i)=>{
+          const yp=zY-(v/maxAbs)*(H2/2); if(yp<pad.t-2||yp>pad.t+H2+2) return null;
+          return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth={v===0?1:0.5} strokeDasharray={v===0?"none":"3,3"}/><text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="10" fill={t.textMuted}>{v}%</text></g>);
+        })}
+        {items.map((d,i)=>{
+          const cx=pad.l+(i+0.5)*(W2/items.length);
+          const barH=Math.abs(d.ret)/maxAbs*(H2/2);
+          const y=d.ret>=0?zY-barH:zY;
+          const col=d.ret>=0?t.green:t.red;
+          return(
+            <g key={d.year} onMouseEnter={e=>handleMouse(e,d)}>
+              <rect x={cx-barW/2} y={y} width={barW} height={Math.max(barH,1)} fill={col} opacity="0.85" rx="2" style={{cursor:"pointer"}}/>
+              <text x={cx} y={H-10} textAnchor="middle" fontSize="10" fill={t.textMuted}>{d.year}</text>
+            </g>
+          );
+        })}
+      </svg>
+      {tip&&<Tooltip tip={tip} t={t}/>}
+    </div>
   );
 }
 
-// ─── Compare NAV Chart (hover tooltip, multi-line) ────────────────────────────
-function CompareChart({ series, t }) {
+// ─── Compare NAV Chart (multi-line) with tooltip ──────────────────────────────
+function CompareChart({series,t}){
+  const {tip,setTip}=useChartTooltip();
   const W=900,H=340;
-  const {svgRef,tooltip,handleMouseMove,handleMouseLeave} = useChartTooltip();
-
   if(!series?.length) return null;
   const allPts=series.flatMap(s=>s.points.map(p=>p.val));
-  const minV=Math.min(...allPts), maxV=Math.max(...allPts);
-  const pad={t:20,b:44,l:65,r:20}, W2=W-pad.l-pad.r, H2=H-pad.t-pad.b;
+  const minV=Math.min(...allPts),maxV=Math.max(...allPts);
+  const pad={t:20,b:48,l:68,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
   const n=series[0]?.points?.length??0; if(n<2) return null;
   const xf=i=>pad.l+(i/(n-1))*W2, yf=v=>pad.t+(1-(v-minV)/(maxV-minV||1))*H2;
-
   const step=Math.max(1,Math.floor(n/8));
   const xL=[]; for(let i=0;i<n;i+=step){const dt=parseDate(series[0].points[i].date);xL.push({x:xf(i),label:`${dt.getMonth()+1}/${String(dt.getFullYear()).slice(2)}`});}
 
-  // For tooltip: first series points array
-  const pts0=series[0].points;
+  const handleMouse=useCallback((e)=>{
+    const svg=e.currentTarget,rect=svg.getBoundingClientRect();
+    const svgX=(e.clientX-rect.left)/rect.width*W;
+    const idx=Math.max(0,Math.min(n-1,Math.round((svgX-pad.l)/W2*(n-1))));
+    const d0=series[0].points[idx];
+    const avgY=series.reduce((s2,s)=>s2+yf(s.points[idx]?.val??minV),0)/series.length;
+    setTip({x:(xf(idx)/W)*rect.width,y:(avgY/H)*rect.height,date:fmtDate(d0.date),
+      lines:series.map(s=>({label:s.name.split("–")[0].trim().slice(0,22),val:fmt(s.points[idx]?.val??0),color:s.color}))});
+  },[series,n]);
 
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"crosshair"}}
-      onMouseMove={e=>{
-        const svg=svgRef.current; if(!svg) return;
-        const rect=svg.getBoundingClientRect();
-        const mx=(e.clientX-rect.left)*(W/rect.width);
-        const idx=Math.max(0,Math.min(n-1,Math.round((mx-pad.l)/W2*(n-1))));
-        const svgX=xf(idx);
-        const items=series.map(s=>({
-          label:s.name.split("–")[0].trim().slice(0,20),
-          value:s.points[idx]?fmt(s.points[idx].val,1):"--",
-          color:s.color
-        }));
-        const rawY=e.clientY-rect.top;
-        handleMouseMove({clientX:e.clientX,clientY:e.clientY},pts0,pad,W,H,series.map(s=>({...s,points:s.points})));
-      }}
-      onMouseLeave={handleMouseLeave}>
-      {[0,0.2,0.4,0.6,0.8,1].map((r,i)=>{const yp=pad.t+r*H2,v=maxV-r*(maxV-minV);return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth="0.5" strokeDasharray="4,4"/><text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{Math.round(v)}</text></g>);})}
-      {series.map(s=>{
-        const p=s.points.map((pt,i)=>`${xf(i)},${yf(pt.val)}`).join(" ");
-        return <polyline key={s.name} points={p} fill="none" stroke={s.color} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>;
-      })}
-      {xL.map((l,i)=><text key={i} x={l.x} y={H-8} textAnchor="middle" fontSize="11" fill={t.textMuted}>{l.label}</text>)}
-      {/* Multi-line tooltip */}
-      {tooltip.visible&&(()=>{
-        const idx=tooltip.idx??0;
-        const items=series.map(s=>({label:s.name.split("–")[0].trim().slice(0,20),value:s.points[idx]?fmt(s.points[idx].val,1)+"x":"--",color:s.color}));
-        const boxW=200, boxH=items.length*22+28;
-        const tx=tooltip.svgX+14+boxW>W-pad.r?tooltip.svgX-boxW-14:tooltip.svgX+14;
-        const ty=Math.max(pad.t,Math.min(H-pad.b-boxH,40));
-        return (
-          <g pointerEvents="none">
-            <line x1={tooltip.svgX} x2={tooltip.svgX} y1={pad.t} y2={H-pad.b} stroke={t.textMuted} strokeWidth="1" strokeDasharray="4,3"/>
-            {series.map(s=>{const pt=s.points[idx]; if(!pt) return null; return <circle key={s.name} cx={tooltip.svgX} cy={yf(pt.val)} r="5" fill={s.color} stroke={t.surface} strokeWidth="2"/>;})}
-            <rect x={tx} y={ty} width={boxW} height={boxH} rx="8" fill={t.tooltip} opacity="0.95" stroke={t.border} strokeWidth="1"/>
-            <text x={tx+10} y={ty+16} fontSize="10" fill={t.textMuted}>{pts0[idx]?.date?fmtDate(pts0[idx].date):""}</text>
-            {items.map((item,i)=>(
-              <g key={i}>
-                <rect x={tx+10} y={ty+24+i*22} width="8" height="8" rx="2" fill={item.color}/>
-                <text x={tx+24} y={ty+32+i*22} fontSize="11" fill={t.textSub}>{item.label}</text>
-                <text x={tx+boxW-8} y={ty+32+i*22} textAnchor="end" fontSize="12" fontWeight="600" fill={t.text}>{item.value}</text>
-              </g>
-            ))}
-          </g>
-        );
-      })()}
-    </svg>
+    <div style={{position:"relative",height:"100%"}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"crosshair"}} onMouseMove={handleMouse} onMouseLeave={()=>setTip(null)}>
+        {[0,0.2,0.4,0.6,0.8,1].map((r,i)=>{const yp=pad.t+r*H2,v=maxV-r*(maxV-minV);return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth="0.5" strokeDasharray="4,4"/><text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{Math.round(v)}</text></g>);})}
+        {series.map(s=>{const pts=s.points.map((p,i)=>`${xf(i)},${yf(p.val)}`).join(" ");return<polyline key={s.name} points={pts} fill="none" stroke={s.color} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>;  })}
+        {xL.map((l,i)=><text key={i} x={l.x} y={H-10} textAnchor="middle" fontSize="11" fill={t.textMuted}>{l.label}</text>)}
+      </svg>
+      {tip&&<Tooltip tip={tip} t={t}/>}
+    </div>
   );
 }
 
-// ─── Compare Rolling Chart (hover tooltip) ────────────────────────────────────
-function CompareRollingChart({ series, t }) {
+// ─── Compare Rolling Chart (multi-line) with tooltip ──────────────────────────
+function CompareRollingChart({series,t}){
+  const {tip,setTip}=useChartTooltip();
   const W=900,H=300;
-  const {svgRef,tooltip,handleMouseMove,handleMouseLeave} = useChartTooltip();
-  if(!series?.length) return null;
-  const allPts=series.flatMap(s=>s.points);
-  if(!allPts.length) return <div style={{color:t.textMuted,padding:40,textAlign:"center"}}>Not enough data</div>;
-  const minV=Math.min(...allPts.map(p=>p.val),0),maxV=Math.max(...allPts.map(p=>p.val));
-  const pad={t:20,b:44,l:58,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
-  const n=series[0]?.points?.length??0; if(n<2) return null;
-  const xf=i=>pad.l+(i/(n-1))*W2, yf=v=>pad.t+(1-(v-minV)/(maxV-minV||1))*H2;
-  const zY=yf(0);
-  const step=Math.max(1,Math.floor(n/7));
-  const xL=[]; for(let i=0;i<n;i+=step){xL.push({x:xf(i),label:parseDate(series[0].points[i].date).getFullYear().toString()});}
+  if(!series?.length||!series[0]?.points?.length) return <div style={{color:t.textMuted,padding:40,textAlign:"center"}}>Not enough data</div>;
+  const allPts=series.flatMap(s=>s.points.map(p=>p.val));
+  const minV=Math.min(...allPts,0),maxV=Math.max(...allPts);
+  const pad={t:20,b:48,l:60,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
+  const zY=pad.t+(1-(0-minV)/(maxV-minV||1))*H2;
+
+  const handleMouse=useCallback((e)=>{
+    const svg=e.currentTarget,rect=svg.getBoundingClientRect();
+    const svgX=(e.clientX-rect.left)/rect.width*W;
+    // use longest series as reference
+    const ref=series.reduce((a,b)=>a.points.length>b.points.length?a:b);
+    const n=ref.points.length; if(!n) return;
+    const xf2=i=>pad.l+(i/(n-1))*W2;
+    const idx=Math.max(0,Math.min(n-1,Math.round((svgX-pad.l)/W2*(n-1))));
+    setTip({x:(xf2(idx)/W)*rect.width,y:(zY/H)*rect.height,date:fmtDate(ref.points[idx].date),
+      lines:series.map(s=>{const p=s.points[Math.min(idx,s.points.length-1)];return{label:s.name.split("–")[0].trim().slice(0,22),val:pct(p?.val??0),color:s.color};})});
+  },[series,zY]);
 
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"crosshair"}}
-      onMouseMove={e=>{
-        const svg=svgRef.current; if(!svg) return;
-        const rect=svg.getBoundingClientRect();
-        const mx=(e.clientX-rect.left)*(W/rect.width);
-        const idx=Math.max(0,Math.min(n-1,Math.round((mx-pad.l)/W2*(n-1))));
-        handleMouseMove({clientX:e.clientX,clientY:e.clientY},series[0].points,pad,W,H,series);
-      }}
-      onMouseLeave={handleMouseLeave}>
-      {[0,0.25,0.5,0.75,1].map((r,i)=>{const yp=pad.t+r*H2,v=maxV-r*(maxV-minV);return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth="0.5" strokeDasharray="4,4"/><text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{fmt(v)}%</text></g>);})}
-      <line x1={pad.l} x2={pad.l+W2} y1={zY} y2={zY} stroke={t.textMuted} strokeWidth="1"/>
-      {series.map(s=>{const p=s.points.map((pt,i)=>`${xf(i)},${yf(pt.val)}`).join(" ");return <polyline key={s.name} points={p} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round"/>;})}
-      {xL.map((l,i)=><text key={i} x={l.x} y={H-8} textAnchor="middle" fontSize="11" fill={t.textMuted}>{l.label}</text>)}
-      {/* multi tooltip */}
-      {tooltip.visible&&(()=>{
-        const idx=tooltip.idx??0;
-        const items=series.map(s=>({label:s.name?.split("–")[0].trim().slice(0,20)??"",value:s.points[idx]?fmt(s.points[idx].val,2)+"%":"--",color:s.color}));
-        const boxW=200,boxH=items.length*22+28;
-        const tx=tooltip.svgX+14+boxW>W-pad.r?tooltip.svgX-boxW-14:tooltip.svgX+14;
-        const ty=Math.max(pad.t,Math.min(H-pad.b-boxH,40));
-        return(
-          <g pointerEvents="none">
-            <line x1={tooltip.svgX} x2={tooltip.svgX} y1={pad.t} y2={H-pad.b} stroke={t.textMuted} strokeWidth="1" strokeDasharray="4,3"/>
-            {series.map(s=>{const pt=s.points[idx];if(!pt) return null;return <circle key={s.name} cx={tooltip.svgX} cy={yf(pt.val)} r="5" fill={s.color} stroke={t.surface} strokeWidth="2"/>;})}
-            <rect x={tx} y={ty} width={boxW} height={boxH} rx="8" fill={t.tooltip} opacity="0.95" stroke={t.border} strokeWidth="1"/>
-            <text x={tx+10} y={ty+16} fontSize="10" fill={t.textMuted}>{series[0].points[idx]?.date?fmtDate(series[0].points[idx].date):""}</text>
-            {items.map((item,i)=>(<g key={i}><rect x={tx+10} y={ty+24+i*22} width="8" height="8" rx="2" fill={item.color}/><text x={tx+24} y={ty+32+i*22} fontSize="11" fill={t.textSub}>{item.label}</text><text x={tx+boxW-8} y={ty+32+i*22} textAnchor="end" fontSize="12" fontWeight="600" fill={t.text}>{item.value}</text></g>))}
-          </g>
-        );
-      })()}
-    </svg>
+    <div style={{position:"relative",height:"100%"}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",cursor:"crosshair"}} onMouseMove={handleMouse} onMouseLeave={()=>setTip(null)}>
+        {[0,0.25,0.5,0.75,1].map((r,i)=>{const yp=pad.t+r*H2,v=maxV-r*(maxV-minV);return(<g key={i}><line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp} stroke={t.border} strokeWidth="0.5" strokeDasharray="4,4"/><text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{fmt(v)}%</text></g>);})}
+        <line x1={pad.l} x2={pad.l+W2} y1={zY} y2={zY} stroke={t.textMuted} strokeWidth="1"/>
+        {series.map(s=>{
+          const n=s.points.length; if(n<2) return null;
+          const xf2=i=>pad.l+(i/(n-1))*W2,yf2=v=>pad.t+(1-(v-minV)/(maxV-minV||1))*H2;
+          const step2=Math.max(1,Math.floor(n/7));
+          return(
+            <g key={s.name}>
+              <polyline points={s.points.map((p,i)=>`${xf2(i)},${yf2(p.val)}`).join(" ")} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round"/>
+              {[...Array(Math.ceil(n/step2))].map((_,k)=>{const i2=Math.min(k*step2,n-1);const dt=parseDate(s.points[i2].date);return<text key={i2} x={xf2(i2)} y={H-10} textAnchor="middle" fontSize="11" fill={t.textMuted}>{dt.getFullYear()}</text>;})}
+            </g>
+          );
+        })}
+      </svg>
+      {tip&&<Tooltip tip={tip} t={t}/>}
+    </div>
   );
 }
 
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [isDark,setIsDark]             = useState(true);
-  const t                              = T[isDark?"dark":"light"];
-  const [query,setQuery]               = useState("");
-  const [suggestions,setSuggestions]   = useState([]);
-  const [searching,setSearching]       = useState(false);
-  const [fund,setFund]                 = useState(null);
-  const [loading,setLoading]           = useState(false);
-  const [error,setError]               = useState(null);
-  const [activeTab,setActiveTab]       = useState("NAV Chart");
-  const [navRange,setNavRange]         = useState("ALL");
-  const [rollingYears,setRollingYears] = useState(3);
-  const [rollingData,setRollingData]   = useState(null);
-  const [sip,setSip]                   = useState({lumpsum:100000,monthly:10000,duration:5,expense:1.5});
-  const [sipResult,setSipResult]       = useState(null);
-  const [cmpFunds,setCmpFunds]         = useState([]);
-  const [cmpQuery,setCmpQuery]         = useState("");
-  const [cmpSugg,setCmpSugg]           = useState([]);
-  const [cmpLoading,setCmpLoading]     = useState(false);
-  const [cmpTab,setCmpTab]             = useState("NAV");
+  const [isDark,setIsDark]            = useState(false); // ← DEFAULT LIGHT
+  const t                             = T[isDark?"dark":"light"];
+  const [query,setQuery]              = useState("");
+  const [suggestions,setSuggestions]  = useState([]);
+  const [searching,setSearching]      = useState(false);
+  const [fund,setFund]                = useState(null);
+  const [loading,setLoading]          = useState(false);
+  const [error,setError]              = useState(null);
+  const [activeTab,setActiveTab]      = useState("NAV Chart");
+  const [navRange,setNavRange]        = useState("ALL");
+  const [rollingYears,setRollingYears]= useState(3);
+  const [rollingData,setRollingData]  = useState(null);
+  const [sip,setSip]                  = useState({lumpsum:100000,monthly:10000,duration:5,expense:1.5});
+  const [sipResult,setSipResult]      = useState(null);
+  const [cmpFunds,setCmpFunds]        = useState([]);
+  const [cmpQuery,setCmpQuery]        = useState("");
+  const [cmpSugg,setCmpSugg]          = useState([]);
+  const [cmpLoading,setCmpLoading]    = useState(false);
+  const [cmpTab,setCmpTab]            = useState("NAV");
   const [cmpRollingYrs,setCmpRollingYrs]=useState(3);
   const debRef=useRef(null),cmpDebRef=useRef(null);
   const searchRef=useRef(null),cmpSearchRef=useRef(null);
 
   useEffect(()=>{
-    const h=e=>{if(searchRef.current&&!searchRef.current.contains(e.target)) setSuggestions([]); if(cmpSearchRef.current&&!cmpSearchRef.current.contains(e.target)) setCmpSugg([]);};
+    const h=e=>{ if(searchRef.current&&!searchRef.current.contains(e.target)) setSuggestions([]); if(cmpSearchRef.current&&!cmpSearchRef.current.contains(e.target)) setCmpSugg([]); };
     document.addEventListener("mousedown",h); return()=>document.removeEventListener("mousedown",h);
   },[]);
 
-  const handleSearch=val=>{setQuery(val);clearTimeout(debRef.current);if(!val.trim()){setSuggestions([]);return;}debRef.current=setTimeout(async()=>{setSearching(true);try{const j=await fetchWithProxy(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(val)}`);setSuggestions((Array.isArray(j)?j:[]).slice(0,12));}catch{setSuggestions([]);}setSearching(false);},380);};
-  const loadFund=async code=>{setLoading(true);setError(null);setSuggestions([]);setQuery("");setSipResult(null);try{const j=await fetchWithProxy(`https://api.mfapi.in/mf/${code}`);if(!j?.data?.length) throw new Error("No NAV data");setFund(j);setActiveTab("NAV Chart");setNavRange("ALL");if(cmpFunds.length===0) setCmpFunds([j]);}catch(e){setError(e.message||"Failed to load fund");}setLoading(false);};
-  const handleCmpSearch=val=>{setCmpQuery(val);clearTimeout(cmpDebRef.current);if(!val.trim()){setCmpSugg([]);return;}cmpDebRef.current=setTimeout(async()=>{try{const j=await fetchWithProxy(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(val)}`);setCmpSugg((Array.isArray(j)?j:[]).slice(0,10));}catch{setCmpSugg([]);};},380);};
-  const addCmpFund=async code=>{if(cmpFunds.length>=6) return;setCmpLoading(true);setCmpSugg([]);setCmpQuery("");try{const j=await fetchWithProxy(`https://api.mfapi.in/mf/${code}`);if(j?.data?.length) setCmpFunds(p=>[...p,j]);}catch{}setCmpLoading(false);};
-  const removeCmpFund=i=>setCmpFunds(p=>p.filter((_,idx)=>idx!==i));
+  const handleSearch=val=>{
+    setQuery(val); clearTimeout(debRef.current);
+    if(!val.trim()){setSuggestions([]);return;}
+    debRef.current=setTimeout(async()=>{ setSearching(true); try{const j=await fetchWithProxy(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(val)}`);setSuggestions((Array.isArray(j)?j:[]).slice(0,12));}catch{setSuggestions([]);} setSearching(false); },380);
+  };
 
-  useEffect(()=>{if(!fund) return;setRollingData(computeRolling(fund.data,rollingYears));},[fund,rollingYears]);
+  const loadFund=async code=>{
+    setLoading(true);setError(null);setSuggestions([]);setQuery("");setSipResult(null);
+    try{
+      const j=await fetchWithProxy(`https://api.mfapi.in/mf/${code}`);
+      if(!j?.data?.length) throw new Error("No NAV data");
+      setFund(j);setActiveTab("NAV Chart");setNavRange("ALL");
+      setCmpFunds([j]);
+    }catch(e){setError(e.message||"Failed to load fund");}
+    setLoading(false);
+  };
 
-  const calcSIP=()=>{const{lumpsum,monthly,duration,expense}=sip;const base=stats?.cagr5y??12;const adj=Math.max(0,base-expense);const r=adj/100/12,n=duration*12;const sipFV=r>0?monthly*((Math.pow(1+r,n)-1)/r)*(1+r):monthly*n;const lsFV=lumpsum*Math.pow(1+adj/100,duration);const total=sipFV+lsFV,inv=lumpsum+monthly*n;setSipResult({sipFV,lsFV,total,invested:inv,gain:total-inv,cagr:adj});};
+  const handleCmpSearch=val=>{
+    setCmpQuery(val); clearTimeout(cmpDebRef.current);
+    if(!val.trim()){setCmpSugg([]);return;}
+    cmpDebRef.current=setTimeout(async()=>{ try{const j=await fetchWithProxy(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(val)}`);setCmpSugg((Array.isArray(j)?j:[]).slice(0,10));}catch{setCmpSugg([]);} },380);
+  };
 
-  const stats    = fund?computeStats(fund.data):null;
-  const calYear  = fund?computeCalYear(fund.data):[];
-  const trailing = fund?computeTrailing(fund.data):[];
-  const monthly  = fund?computeMonthly(fund.data):{};
-  const bestWorst= fund?computeBestWorst(fund.data):null;
-  const annualVol= fund?computeAnnualWithVolatility(fund.data):[];
-  const cmpRebased=cmpFunds.length>=2?rebaseNavSeries(cmpFunds):null;
-  const cmpRolling=cmpFunds.map((f,i)=>({name:f.meta?.scheme_name,color:COMPARE_COLORS[i%COMPARE_COLORS.length],points:computeRolling(f.data,cmpRollingYrs)}));
-  const cmpStats =cmpFunds.map(f=>computeStats(f.data));
-  const cmpBW    =cmpFunds.map(f=>computeBestWorst(f.data));
+  const addCmpFund=async code=>{
+    if(cmpFunds.length>=6) return; setCmpLoading(true);setCmpSugg([]);setCmpQuery("");
+    try{const j=await fetchWithProxy(`https://api.mfapi.in/mf/${code}`); if(j?.data?.length) setCmpFunds(p=>[...p,j]);}catch{}
+    setCmpLoading(false);
+  };
 
+  useEffect(()=>{ if(!fund) return; setRollingData(computeRolling(fund.data,rollingYears)); },[fund,rollingYears]);
+
+  const calcSIP=()=>{
+    const{lumpsum,monthly,duration,expense}=sip;
+    const base=stats?.cagr5y??12; const adj=Math.max(0,base-expense);
+    const r=adj/100/12,n=duration*12;
+    const sipFV=r>0?monthly*((Math.pow(1+r,n)-1)/r)*(1+r):monthly*n;
+    const lsFV=lumpsum*Math.pow(1+adj/100,duration);
+    const total=sipFV+lsFV,inv=lumpsum+monthly*n;
+    setSipResult({sipFV,lsFV,total,invested:inv,gain:total-inv,cagr:adj});
+  };
+
+  const stats     = fund?computeStats(fund.data):null;
+  const calYear   = fund?computeCalYear(fund.data):[];
+  const trailing  = fund?computeTrailing(fund.data):[];
+  const monthly   = fund?computeMonthly(fund.data):{};
+  const bestWorst = fund?computeBestWorst(fund.data):null;
+  const annualVol = fund?computeAnnualWithVolatility(fund.data):[];
+  const cmpRebased= cmpFunds.length>=2?rebaseNavSeries(cmpFunds):null;
+  const cmpRolling= cmpFunds.map((f,i)=>({name:f.meta?.scheme_name,color:COMPARE_COLORS[i%COMPARE_COLORS.length],points:computeRolling(f.data,cmpRollingYrs)}));
+  const cmpStats  = cmpFunds.map(f=>computeStats(f.data));
+  const cmpBW     = cmpFunds.map(f=>computeBestWorst(f.data));
+
+  // ── Styles ──────────────────────────────────────────────────────────────────
   const s={
-    app:{minHeight:"100vh",backgroundColor:t.bg,color:t.text,fontFamily:"'DM Sans','Segoe UI',sans-serif"},
-    nav:{backgroundColor:t.surface,borderBottom:`1px solid ${t.border}`,padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:60,position:"sticky",top:0,zIndex:100,boxShadow:t.shadow},
-    logo:{display:"flex",alignItems:"center",gap:10,fontWeight:800,fontSize:20,color:t.text,cursor:"pointer",userSelect:"none"},
+    app:    {minHeight:"100vh",backgroundColor:t.bg,color:t.text,fontFamily:"'DM Sans','Segoe UI',sans-serif"},
+    nav:    {backgroundColor:t.surface,borderBottom:`1px solid ${t.border}`,padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:60,position:"sticky",top:0,zIndex:100,boxShadow:t.shadow},
+    logo:   {display:"flex",alignItems:"center",gap:10,fontWeight:800,fontSize:20,color:t.text,cursor:"pointer",userSelect:"none"},
     logoBox:{width:36,height:36,background:`linear-gradient(135deg,${t.accent},#6366f1)`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18},
-    swrap:{position:"relative",flex:1,maxWidth:520,margin:"0 28px"},
-    sinput:{width:"100%",padding:"9px 16px 9px 40px",borderRadius:10,border:`1.5px solid ${t.border}`,backgroundColor:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"},
-    sicon:{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:t.textMuted,fontSize:15,pointerEvents:"none"},
-    drop:{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,backgroundColor:t.surface,border:`1px solid ${t.border}`,borderRadius:12,zIndex:300,overflow:"hidden",boxShadow:t.shadow,maxHeight:360,overflowY:"auto"},
-    dropItem:{padding:"11px 16px",cursor:"pointer",fontSize:13,borderBottom:`1px solid ${t.borderLight}`,display:"flex",justifyContent:"space-between",alignItems:"center"},
-    themeBtn:{padding:"7px 16px",borderRadius:8,border:`1px solid ${t.border}`,backgroundColor:t.chip,color:t.text,cursor:"pointer",fontSize:13,fontWeight:500,whiteSpace:"nowrap"},
-    cont:{maxWidth:1140,margin:"0 auto",padding:"0 20px 80px"},
-    card:{backgroundColor:t.card,border:`1px solid ${t.border}`,borderRadius:14,padding:"20px 22px",marginBottom:20},
-    ctitle:{fontSize:15,fontWeight:700,color:t.accent,marginBottom:16},
-    statsBar:{display:"flex",flexWrap:"wrap",gap:1,backgroundColor:t.border,borderRadius:14,overflow:"hidden",marginBottom:20,border:`1px solid ${t.border}`},
-    sCell:{flex:"1 1 110px",padding:"14px 14px",backgroundColor:t.card,textAlign:"center"},
-    sLabel:{fontSize:9,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.9px",marginBottom:5},
-    sVal:{fontSize:17,fontWeight:700,lineHeight:1},
-    tabRow:{display:"flex",borderBottom:`1px solid ${t.border}`,marginBottom:24,overflowX:"auto",gap:0},
-    tab:a=>({padding:"11px 18px",cursor:"pointer",fontSize:13,fontWeight:a?600:400,color:a?t.accent:t.textSub,borderBottom:a?`2.5px solid ${t.accent}`:"2.5px solid transparent",whiteSpace:"nowrap",userSelect:"none",backgroundColor:"transparent"}),
-    table:{width:"100%",borderCollapse:"collapse",fontSize:13},
-    th:{padding:"9px 12px",textAlign:"right",color:t.textMuted,fontWeight:500,fontSize:11,textTransform:"uppercase",letterSpacing:"0.6px",borderBottom:`1px solid ${t.border}`},
-    thL:{padding:"9px 12px",textAlign:"left",color:t.textMuted,fontWeight:500,fontSize:11,textTransform:"uppercase",letterSpacing:"0.6px",borderBottom:`1px solid ${t.border}`},
-    td:{padding:"9px 12px",textAlign:"right",borderBottom:`1px solid ${t.borderLight}`,fontSize:13},
-    tdL:{padding:"9px 12px",textAlign:"left",borderBottom:`1px solid ${t.borderLight}`,fontWeight:500,fontSize:13},
-    chip:{display:"inline-block",padding:"7px 14px",backgroundColor:t.chip,borderRadius:20,fontSize:12,cursor:"pointer",border:`1px solid ${t.border}`,margin:"3px"},
-    mBox:{flex:"1 1 150px",backgroundColor:t.bg,border:`1px solid ${t.border}`,borderRadius:12,padding:"14px 16px"},
-    mLabel:{fontSize:11,color:t.textMuted,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.6px"},
-    mVal:{fontSize:21,fontWeight:700},
+    swrap:  {position:"relative",flex:1,maxWidth:520,margin:"0 28px"},
+    sinput: {width:"100%",padding:"9px 16px 9px 40px",borderRadius:10,border:`1.5px solid ${t.border}`,backgroundColor:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"},
+    sicon:  {position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:t.textMuted,fontSize:15,pointerEvents:"none"},
+    drop:   {position:"absolute",top:"calc(100% + 6px)",left:0,right:0,backgroundColor:t.surface,border:`1px solid ${t.border}`,borderRadius:12,zIndex:300,overflow:"hidden",boxShadow:t.shadow,maxHeight:360,overflowY:"auto"},
+    dropI:  {padding:"11px 16px",cursor:"pointer",fontSize:13,borderBottom:`1px solid ${t.borderLight}`,display:"flex",justifyContent:"space-between",alignItems:"center"},
+    tBtn:   {padding:"7px 16px",borderRadius:8,border:`1px solid ${t.border}`,backgroundColor:t.chip,color:t.text,cursor:"pointer",fontSize:13,fontWeight:500,whiteSpace:"nowrap"},
+    cont:   {maxWidth:1140,margin:"0 auto",padding:"0 20px 80px"},
+    card:   {backgroundColor:t.card,border:`1px solid ${t.border}`,borderRadius:14,padding:"20px 22px",marginBottom:20},
+    ctitle: {fontSize:15,fontWeight:700,color:t.accent,marginBottom:16},
+    sBar:   {display:"flex",flexWrap:"wrap",gap:1,backgroundColor:t.border,borderRadius:14,overflow:"hidden",marginBottom:20,border:`1px solid ${t.border}`},
+    sCell:  {flex:"1 1 110px",padding:"14px 14px",backgroundColor:t.card,textAlign:"center"},
+    sLbl:   {fontSize:9,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.9px",marginBottom:5},
+    sVal:   {fontSize:17,fontWeight:700,lineHeight:1},
+    tabRow: {display:"flex",borderBottom:`1px solid ${t.border}`,marginBottom:24,overflowX:"auto",gap:0},
+    tab:  a=>({padding:"11px 18px",cursor:"pointer",fontSize:13,fontWeight:a?600:400,color:a?t.accent:t.textSub,borderBottom:a?`2.5px solid ${t.accent}`:"2.5px solid transparent",whiteSpace:"nowrap",userSelect:"none",backgroundColor:"transparent"}),
+    table:  {width:"100%",borderCollapse:"collapse",fontSize:13},
+    th:     {padding:"9px 12px",textAlign:"right",color:t.textMuted,fontWeight:500,fontSize:11,textTransform:"uppercase",letterSpacing:"0.6px",borderBottom:`1px solid ${t.border}`},
+    thL:    {padding:"9px 12px",textAlign:"left",color:t.textMuted,fontWeight:500,fontSize:11,textTransform:"uppercase",letterSpacing:"0.6px",borderBottom:`1px solid ${t.border}`},
+    td:     {padding:"9px 12px",textAlign:"right",borderBottom:`1px solid ${t.borderLight}`,fontSize:13},
+    tdL:    {padding:"9px 12px",textAlign:"left",borderBottom:`1px solid ${t.borderLight}`,fontWeight:500,fontSize:13},
+    chip:   {display:"inline-block",padding:"7px 14px",backgroundColor:t.chip,borderRadius:20,fontSize:12,cursor:"pointer",border:`1px solid ${t.border}`,margin:"3px"},
+    mBox:   {flex:"1 1 150px",backgroundColor:t.bg,border:`1px solid ${t.border}`,borderRadius:12,padding:"14px 16px"},
+    mLbl:   {fontSize:11,color:t.textMuted,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.6px"},
+    mVal:   {fontSize:21,fontWeight:700},
   };
   const cv=v=>({color:v==null||isNaN(v)?t.textMuted:v>=0?t.green:t.red,fontWeight:600});
 
   const Dropdown=({items,onSelect})=>items.length>0?(
     <div style={s.drop}>{items.map(su=>(
-      <div key={su.schemeCode} style={s.dropItem}
+      <div key={su.schemeCode} style={s.dropI}
         onMouseEnter={e=>e.currentTarget.style.backgroundColor=t.chip}
         onMouseLeave={e=>e.currentTarget.style.backgroundColor="transparent"}
         onClick={()=>onSelect(su.schemeCode)}>
@@ -602,12 +548,20 @@ export default function App() {
     ))}</div>
   ):null;
 
-  // ── HOME ───────────────────────────────────────────────────────────────────
+  const RangeBtns=({ranges,active,onSet})=>(
+    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+      {ranges.map(r=>(
+        <button key={r} onClick={()=>onSet(r)} style={{padding:"5px 13px",borderRadius:7,border:`1px solid ${active===r?t.accent:t.border}`,backgroundColor:active===r?t.accent:t.chip,color:active===r?"#fff":t.text,cursor:"pointer",fontSize:12,fontWeight:active===r?600:400}}>{r}</button>
+      ))}
+    </div>
+  );
+
+  // ── HOME ────────────────────────────────────────────────────────────────────
   if(!fund&&!loading) return (
     <div style={s.app}>
       <nav style={s.nav}>
         <div style={s.logo}><div style={s.logoBox}>📈</div>MFAnalyser</div>
-        <button style={s.themeBtn} onClick={()=>setIsDark(p=>!p)}>{isDark?"☀️ Light":"🌙 Dark"}</button>
+        <button style={s.tBtn} onClick={()=>setIsDark(p=>!p)}>{isDark?"☀️ Light":"🌙 Dark"}</button>
       </nav>
       <div style={{textAlign:"center",padding:"80px 24px 60px",maxWidth:680,margin:"0 auto"}}>
         <div style={{fontSize:60,marginBottom:20}}>📊</div>
@@ -621,7 +575,13 @@ export default function App() {
         </div>
         <div>
           <div style={{fontSize:11,color:t.textMuted,marginBottom:10,letterSpacing:1.2,textTransform:"uppercase"}}>✦ Popular Funds</div>
-          {POPULAR.map(p=>(<span key={p.code} style={s.chip} onClick={()=>loadFund(p.code)} onMouseEnter={e=>{e.currentTarget.style.backgroundColor=t.accent;e.currentTarget.style.color="#fff";e.currentTarget.style.borderColor=t.accent;}} onMouseLeave={e=>{e.currentTarget.style.backgroundColor=t.chip;e.currentTarget.style.color=t.text;e.currentTarget.style.borderColor=t.border;}}>{p.name.split("–")[0].trim()} <span style={{color:t.textMuted,fontSize:10}}>#{p.code}</span></span>))}
+          {POPULAR.map(p=>(
+            <span key={p.code} style={s.chip} onClick={()=>loadFund(p.code)}
+              onMouseEnter={e=>{e.currentTarget.style.backgroundColor=t.accent;e.currentTarget.style.color="#fff";e.currentTarget.style.borderColor=t.accent;}}
+              onMouseLeave={e=>{e.currentTarget.style.backgroundColor=t.chip;e.currentTarget.style.color=t.text;e.currentTarget.style.borderColor=t.border;}}>
+              {p.name.split("–")[0].trim()} <span style={{color:t.textMuted,fontSize:10}}>#{p.code}</span>
+            </span>
+          ))}
         </div>
         {error&&<div style={{marginTop:32,backgroundColor:t.card,border:`1px solid ${t.red}`,borderRadius:12,padding:20,textAlign:"left"}}><div style={{color:t.red,fontWeight:700,marginBottom:8}}>⚠️ Error</div><div style={{color:t.textSub,fontSize:13,lineHeight:1.6}}>{error}</div></div>}
         <div style={{marginTop:60,fontSize:12,color:t.textMuted,lineHeight:1.8}}>Data sourced from <strong>AMFI India</strong> via mfapi.in · For informational purposes only<br/>Not investment advice · Past performance does not guarantee future results</div>
@@ -637,7 +597,7 @@ export default function App() {
     </div>
   );
 
-  // ── FUND DETAIL ────────────────────────────────────────────────────────────
+  // ── FUND DETAIL ─────────────────────────────────────────────────────────────
   return (
     <div style={s.app}>
       <nav style={s.nav}>
@@ -650,34 +610,44 @@ export default function App() {
           <input style={s.sinput} placeholder="Search another fund…" value={query} onChange={e=>handleSearch(e.target.value)}/>
           <Dropdown items={suggestions} onSelect={loadFund}/>
         </div>
-        <button style={s.themeBtn} onClick={()=>setIsDark(p=>!p)}>{isDark?"☀️ Light":"🌙 Dark"}</button>
+        <button style={s.tBtn} onClick={()=>setIsDark(p=>!p)}>{isDark?"☀️ Light":"🌙 Dark"}</button>
       </nav>
 
       <div style={s.cont}>
+        {/* Fund Header */}
         <div style={{padding:"22px 0 14px"}}>
           <div style={{fontSize:11,color:t.textMuted,textTransform:"uppercase",letterSpacing:1.1,marginBottom:4}}>{fund.meta?.fund_house}</div>
           <h2 style={{fontSize:"clamp(14px,2vw,20px)",fontWeight:700,lineHeight:1.35,marginBottom:10}}>{fund.meta?.scheme_name}</h2>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {[fund.meta?.scheme_category,fund.meta?.scheme_type].filter(Boolean).map(tag=>(<span key={tag} style={{...s.chip,fontSize:11,padding:"4px 11px",cursor:"default"}}>{tag}</span>))}
+            {[fund.meta?.scheme_category,fund.meta?.scheme_type].filter(Boolean).map(tag=>(
+              <span key={tag} style={{...s.chip,fontSize:11,padding:"4px 11px",cursor:"default"}}>{tag}</span>
+            ))}
             {stats&&<span style={{...s.chip,fontSize:11,padding:"4px 11px",cursor:"default",color:t.textMuted}}>Since {stats.inceptionDate}</span>}
           </div>
         </div>
 
+        {/* Stats Bar */}
         {stats&&(
-          <div style={s.statsBar}>
+          <div style={s.sBar}>
             {[
-              {label:"Latest NAV",     val:`₹${fmt(stats.latest)}`,       color:t.text},
-              {label:"1D Return",      val:pct(stats.ret1d),              color:(stats.ret1d??0)>=0?t.green:t.red},
-              {label:"1Y Return",      val:pct(stats.ret1y),              color:(stats.ret1y??0)>=0?t.green:t.red},
-              {label:"3Y CAGR",        val:pct(stats.cagr3y),             color:(stats.cagr3y??0)>=0?t.green:t.red},
-              {label:"5Y CAGR",        val:pct(stats.cagr5y),             color:(stats.cagr5y??0)>=0?t.green:t.red},
-              {label:"Since Inception",val:pct(stats.cagrAll),            color:(stats.cagrAll??0)>=0?t.green:t.red},
-              {label:"Sharpe (3Y)",    val:stats.sharpe!=null?fmt(stats.sharpe):"--", color:t.text},
-              {label:"Max Drawdown",   val:pct(stats.maxDD),              color:t.red},
-            ].map(item=>(<div key={item.label} style={s.sCell}><div style={s.sLabel}>{item.label}</div><div style={{...s.sVal,color:item.color}}>{item.val}</div></div>))}
+              {label:"Latest NAV",     val:`₹${fmt(stats.latest)}`,      color:t.text},
+              {label:"1D Return",      val:pct(stats.ret1d),             color:(stats.ret1d??0)>=0?t.green:t.red},
+              {label:"1Y Return",      val:pct(stats.ret1y),             color:(stats.ret1y??0)>=0?t.green:t.red},
+              {label:"3Y CAGR",        val:pct(stats.cagr3y),            color:(stats.cagr3y??0)>=0?t.green:t.red},
+              {label:"5Y CAGR",        val:pct(stats.cagr5y),            color:(stats.cagr5y??0)>=0?t.green:t.red},
+              {label:"Since Inception",val:pct(stats.cagrAll),           color:(stats.cagrAll??0)>=0?t.green:t.red},
+              {label:"Sharpe (3Y)",    val:stats.sharpe!=null?fmt(stats.sharpe):"--",color:t.text},
+              {label:"Max Drawdown",   val:pct(stats.maxDD),             color:t.red},
+            ].map(item=>(
+              <div key={item.label} style={s.sCell}>
+                <div style={s.sLbl}>{item.label}</div>
+                <div style={{...s.sVal,color:item.color}}>{item.val}</div>
+              </div>
+            ))}
           </div>
         )}
 
+        {/* Tabs */}
         <div style={s.tabRow}>
           {TABS.map(tab=><div key={tab} style={s.tab(activeTab===tab)} onClick={()=>setActiveTab(tab)}>{tab}</div>)}
         </div>
@@ -687,14 +657,14 @@ export default function App() {
           <div style={s.card}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:18}}>
               <div style={s.ctitle}>NAV History</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {["YTD","1Y","3Y","5Y","ALL"].map(r=>(<button key={r} onClick={()=>setNavRange(r)} style={{padding:"5px 13px",borderRadius:7,border:`1px solid ${navRange===r?t.accent:t.border}`,backgroundColor:navRange===r?t.accent:t.chip,color:navRange===r?"#fff":t.text,cursor:"pointer",fontSize:12,fontWeight:navRange===r?600:400}}>{r}</button>))}
-              </div>
+              <RangeBtns ranges={["YTD","1Y","3Y","5Y","ALL"]} active={navRange} onSet={setNavRange}/>
             </div>
             <div style={{height:300}}><LineChart data={fund.data} t={t} range={navRange}/></div>
             {stats&&(
               <div style={{display:"flex",gap:20,marginTop:14,flexWrap:"wrap"}}>
-                {[{label:"Inception Date",val:stats.inceptionDate},{label:"Latest Date",val:stats.latestDate},{label:"Data Points",val:fund.data.length.toLocaleString()}].map(m=>(<div key={m.label} style={{fontSize:12}}><span style={{color:t.textMuted}}>{m.label}: </span><span style={{fontWeight:600}}>{m.val}</span></div>))}
+                {[{label:"Inception Date",val:stats.inceptionDate},{label:"Latest Date",val:stats.latestDate},{label:"Data Points",val:fund.data.length.toLocaleString()}].map(m=>(
+                  <div key={m.label} style={{fontSize:12}}><span style={{color:t.textMuted}}>{m.label}: </span><span style={{fontWeight:600}}>{m.val}</span></div>
+                ))}
               </div>
             )}
           </div>
@@ -730,13 +700,19 @@ export default function App() {
         {/* ── ANNUAL ── */}
         {activeTab==="Annual"&&(
           <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
-            <div style={{flex:"1 1 340px"}}>
+            <div style={{flex:"1 1 320px"}}>
               <div style={s.card}>
                 <div style={s.ctitle}>Annual Returns &amp; Volatility</div>
                 <table style={s.table}>
                   <thead><tr><th style={s.thL}>YEAR</th><th style={s.th}>RETURN</th><th style={s.th}>VOLATILITY</th></tr></thead>
                   <tbody>
-                    {annualVol.map(row=>(<tr key={row.year}><td style={s.tdL}>{row.year}{row.isYTD&&<span style={{marginLeft:6,fontSize:10,backgroundColor:t.accent,color:"#fff",borderRadius:4,padding:"1px 5px",fontWeight:600}}>YTD</span>}</td><td style={{...s.td,...cv(row.ret),fontWeight:600}}>{fmt(row.ret)}%</td><td style={{...s.td,color:t.textSub}}>{row.vol!=null?fmt(row.vol)+"%":"--"}</td></tr>))}
+                    {annualVol.map(row=>(
+                      <tr key={row.year}>
+                        <td style={s.tdL}>{row.year}{row.isYTD&&<span style={{marginLeft:6,fontSize:10,backgroundColor:t.accent,color:"#fff",borderRadius:4,padding:"1px 5px",fontWeight:600}}>YTD</span>}</td>
+                        <td style={{...s.td,...cv(row.ret),fontWeight:600}}>{fmt(row.ret)}%</td>
+                        <td style={{...s.td,color:t.textSub}}>{row.vol!=null?fmt(row.vol)+"%":"--"}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -756,7 +732,17 @@ export default function App() {
             <div style={s.card}>
               <div style={s.ctitle}>Risk Metrics (3-Year Window)</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
-                {[{label:"3Y CAGR",val:pct(stats.cagr3y),color:(stats.cagr3y??0)>=0?t.green:t.red},{label:"5Y CAGR",val:pct(stats.cagr5y),color:(stats.cagr5y??0)>=0?t.green:t.red},{label:"Since Inception",val:pct(stats.cagrAll),color:(stats.cagrAll??0)>=0?t.green:t.red},{label:"Sharpe Ratio (3Y)",val:stats.sharpe!=null?fmt(stats.sharpe):"--",color:(stats.sharpe??0)>=1?t.green:t.textSub},{label:"Sortino Ratio (3Y)",val:stats.sortino!=null?fmt(stats.sortino):"--",color:(stats.sortino??0)>=1?t.green:t.textSub},{label:"Std Dev (Ann.) %",val:stats.stdDev!=null?fmt(stats.stdDev)+"%":"--",color:t.text},{label:"Max Drawdown",val:pct(stats.maxDD),color:t.red},{label:"Drawdown Date",val:stats.ddDate??"--",color:t.textSub},{label:"Risk-Free Rate",val:"6.0% p.a.",color:t.textMuted}].map(m=>(<div key={m.label} style={s.mBox}><div style={s.mLabel}>{m.label}</div><div style={{...s.mVal,color:m.color}}>{m.val}</div></div>))}
+                {[
+                  {label:"3Y CAGR",          val:pct(stats.cagr3y),   color:(stats.cagr3y??0)>=0?t.green:t.red},
+                  {label:"5Y CAGR",          val:pct(stats.cagr5y),   color:(stats.cagr5y??0)>=0?t.green:t.red},
+                  {label:"Since Inception",  val:pct(stats.cagrAll),  color:(stats.cagrAll??0)>=0?t.green:t.red},
+                  {label:"Sharpe Ratio (3Y)",val:stats.sharpe!=null?fmt(stats.sharpe):"--",color:(stats.sharpe??0)>=1?t.green:t.textSub},
+                  {label:"Sortino Ratio (3Y)",val:stats.sortino!=null?fmt(stats.sortino):"--",color:(stats.sortino??0)>=1?t.green:t.textSub},
+                  {label:"Std Dev (Ann.) %", val:stats.stdDev!=null?fmt(stats.stdDev)+"%":"--",color:t.text},
+                  {label:"Max Drawdown",     val:pct(stats.maxDD),    color:t.red},
+                  {label:"Drawdown Date",    val:stats.ddDate??"--",  color:t.textSub},
+                  {label:"Risk-Free Rate",   val:"6.0% p.a.",         color:t.textMuted},
+                ].map(m=>(<div key={m.label} style={s.mBox}><div style={s.mLbl}>{m.label}</div><div style={{...s.mVal,color:m.color}}>{m.val}</div></div>))}
               </div>
             </div>
             <div style={s.card}>
@@ -779,7 +765,9 @@ export default function App() {
               <table style={s.table}>
                 <thead><tr><th style={s.thL}></th>{["WEEK","MONTH","QUARTER","YEAR"].flatMap(p=>[<th key={p+"B"} style={{...s.th,color:t.green}}>{p} BEST</th>,<th key={p+"W"} style={{...s.th,color:t.red}}>{p} WORST</th>])}</tr></thead>
                 <tbody>
-                  {[{label:"Return (%)",fn:(p,bw)=>bw?fmt(bw.ret)+"%":"--",bwC:true},{label:"Begin",fn:(p,bw)=>bw?.begin??"--",bwC:false},{label:"End",fn:(p,bw)=>bw?.end??"--",bwC:false}].map(row=>(<tr key={row.label}><td style={s.tdL}>{row.label}</td>{["week","month","quarter","year"].flatMap(p=>[<td key={p+"b"} style={{...s.td,color:row.bwC?t.green:t.text,fontWeight:row.bwC?600:400}}>{row.fn(p,bestWorst[p]?.best)}</td>,<td key={p+"w"} style={{...s.td,color:row.bwC?t.red:t.text,fontWeight:row.bwC?600:400}}>{row.fn(p,bestWorst[p]?.worst)}</td>])}</tr>))}
+                  {[{label:"Return (%)",fn:(p,bw)=>bw?fmt(bw.ret)+"%":"--",bwC:true},{label:"Begin",fn:(p,bw)=>bw?.begin??"--",bwC:false},{label:"End",fn:(p,bw)=>bw?.end??"--",bwC:false}].map(row=>(
+                    <tr key={row.label}><td style={s.tdL}>{row.label}</td>{["week","month","quarter","year"].flatMap(p=>[<td key={p+"b"} style={{...s.td,color:row.bwC?t.green:t.text,fontWeight:row.bwC?600:400}}>{row.fn(p,bestWorst[p]?.best)}</td>,<td key={p+"w"} style={{...s.td,color:row.bwC?t.red:t.text,fontWeight:row.bwC?600:400}}>{row.fn(p,bestWorst[p]?.worst)}</td>])}</tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -791,12 +779,16 @@ export default function App() {
           <div style={s.card}>
             <div style={{...s.ctitle,marginBottom:14}}>Rolling Returns (CAGR)</div>
             <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
-              {[1,3,5,7,10,12,15].map(y=>(<button key={y} onClick={()=>setRollingYears(y)} style={{padding:"5px 16px",borderRadius:20,border:`1px solid ${rollingYears===y?t.accent:t.border}`,backgroundColor:rollingYears===y?t.accent:t.chip,color:rollingYears===y?"#fff":t.text,cursor:"pointer",fontSize:13,fontWeight:rollingYears===y?600:400}}>{y}Y</button>))}
+              {[1,3,5,7,10,12,15].map(y=>(
+                <button key={y} onClick={()=>setRollingYears(y)} style={{padding:"5px 16px",borderRadius:20,border:`1px solid ${rollingYears===y?t.accent:t.border}`,backgroundColor:rollingYears===y?t.accent:t.chip,color:rollingYears===y?"#fff":t.text,cursor:"pointer",fontSize:13,fontWeight:rollingYears===y?600:400}}>{y}Y</button>
+              ))}
             </div>
             <div style={{height:300}}><RollingChart data={rollingData} t={t}/></div>
             {rollingData?.length>0&&(
               <div style={{display:"flex",gap:12,marginTop:18,flexWrap:"wrap"}}>
-                {[{label:"Min CAGR",val:Math.min(...rollingData.map(d=>d.cagr)),color:t.red},{label:"Max CAGR",val:Math.max(...rollingData.map(d=>d.cagr)),color:t.green},{label:"Avg CAGR",val:rollingData.reduce((a,b)=>a+b.cagr,0)/rollingData.length,color:t.accent},{label:"% Positive",val:rollingData.filter(d=>d.cagr>0).length/rollingData.length*100,color:t.green,suffix:"%"},{label:"Data Points",val:rollingData.length,color:t.textSub,suffix:""}].map(m=>(<div key={m.label} style={s.mBox}><div style={s.mLabel}>{m.label}</div><div style={{...s.mVal,color:m.color,fontSize:18}}>{typeof m.val==="number"?fmt(m.val):m.val}{m.suffix??"%"}</div></div>))}
+                {[{label:"Min CAGR",val:Math.min(...rollingData.map(d=>d.cagr)),color:t.red},{label:"Max CAGR",val:Math.max(...rollingData.map(d=>d.cagr)),color:t.green},{label:"Avg CAGR",val:rollingData.reduce((a,b)=>a+b.cagr,0)/rollingData.length,color:t.accent},{label:"% Positive",val:rollingData.filter(d=>d.cagr>0).length/rollingData.length*100,color:t.green,suffix:"%"},{label:"Data Points",val:rollingData.length,color:t.textSub,suffix:""}].map(m=>(
+                  <div key={m.label} style={s.mBox}><div style={s.mLbl}>{m.label}</div><div style={{...s.mVal,color:m.color,fontSize:18}}>{typeof m.val==="number"?fmt(m.val):m.val}{m.suffix??"%"}</div></div>
+                ))}
               </div>
             )}
           </div>
@@ -812,7 +804,13 @@ export default function App() {
                 <tbody>
                   {Object.keys(monthly).sort().reverse().map(year=>{
                     const total=Object.values(monthly[year]).reduce((a,b)=>a+b,0);
-                    return(<tr key={year}><td style={s.tdL}>{year}</td>{[...Array(12)].map((_,mi)=>{const v=monthly[year][mi];const intensity=Math.min(Math.abs(v??0)/15,1);const bg=v==null?"transparent":v>=0?`rgba(34,197,94,${0.07+intensity*0.5})`:`rgba(239,68,68,${0.07+intensity*0.5})`;return(<td key={mi} title={v!=null?`${MONTHS[mi]} ${year}: ${fmt(v)}%`:undefined} style={{...s.td,backgroundColor:bg,color:v==null?t.textMuted:v>=0?t.green:t.red,fontWeight:500,fontSize:12}}>{v!=null?fmt(v):"--"}</td>);})}<td style={{...s.td,...cv(total),fontWeight:700}}>{fmt(total)}</td></tr>);
+                    return(
+                      <tr key={year}>
+                        <td style={s.tdL}>{year}</td>
+                        {[...Array(12)].map((_,mi)=>{ const v=monthly[year][mi]; const intensity=Math.min(Math.abs(v??0)/15,1); const bg=v==null?"transparent":v>=0?`rgba(22,163,74,${0.08+intensity*0.5})`:`rgba(220,38,38,${0.08+intensity*0.5})`; return(<td key={mi} title={v!=null?`${MONTHS[mi]} ${year}: ${fmt(v)}%`:undefined} style={{...s.td,backgroundColor:bg,color:v==null?t.textMuted:v>=0?t.green:t.red,fontWeight:500,fontSize:12}}>{v!=null?fmt(v):"--"}</td>); })}
+                        <td style={{...s.td,...cv(total),fontWeight:700}}>{fmt(total)}</td>
+                      </tr>
+                    );
                   })}
                 </tbody>
               </table>
@@ -825,13 +823,18 @@ export default function App() {
           <div style={s.card}>
             <div style={s.ctitle}>SIP &amp; Lumpsum Calculator</div>
             <div style={{display:"flex",flexWrap:"wrap",gap:16,marginBottom:22}}>
-              {[{key:"lumpsum",label:"Lumpsum Amount (₹)",step:10000,min:0},{key:"monthly",label:"Monthly SIP (₹)",step:1000,min:0},{key:"duration",label:"Investment Duration (Yrs)",step:1,min:1,max:40},{key:"expense",label:"Expense Ratio (% p.a.)",step:0.05,min:0,max:5}].map(f=>(<div key={f.key} style={{flex:"1 1 200px"}}><div style={{fontSize:11,color:t.textMuted,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.6px"}}>{f.label}</div><input type="number" step={f.step} min={f.min} max={f.max} value={sip[f.key]} onChange={e=>setSip(p=>({...p,[f.key]:parseFloat(e.target.value)||0}))} style={{width:"100%",padding:"11px 14px",borderRadius:9,border:`1.5px solid ${t.border}`,backgroundColor:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/></div>))}
+              {[{key:"lumpsum",label:"Lumpsum Amount (₹)",step:10000,min:0},{key:"monthly",label:"Monthly SIP (₹)",step:1000,min:0},{key:"duration",label:"Investment Duration (Yrs)",step:1,min:1,max:40},{key:"expense",label:"Expense Ratio (% p.a.)",step:0.05,min:0,max:5}].map(f=>(
+                <div key={f.key} style={{flex:"1 1 200px"}}>
+                  <div style={{fontSize:11,color:t.textMuted,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.6px"}}>{f.label}</div>
+                  <input type="number" step={f.step} min={f.min} max={f.max} value={sip[f.key]} onChange={e=>setSip(p=>({...p,[f.key]:parseFloat(e.target.value)||0}))} style={{width:"100%",padding:"11px 14px",borderRadius:9,border:`1.5px solid ${t.border}`,backgroundColor:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              ))}
             </div>
             <button onClick={calcSIP} style={{padding:"12px 36px",borderRadius:10,background:`linear-gradient(135deg,${t.accent},#6366f1)`,color:"#fff",border:"none",cursor:"pointer",fontSize:15,fontWeight:700}}>Calculate Returns</button>
             {sipResult&&(
               <div style={{marginTop:28}}>
                 <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:20}}>
-                  {[{label:"Total Invested",val:fmtCr(sipResult.invested),color:t.text},{label:"SIP Corpus",val:fmtCr(sipResult.sipFV),color:t.green},{label:"Lumpsum Corpus",val:fmtCr(sipResult.lsFV),color:t.green},{label:"Total Corpus",val:fmtCr(sipResult.total),color:t.accent},{label:"Estimated Gain",val:fmtCr(sipResult.gain),color:sipResult.gain>=0?t.green:t.red},{label:"Applied CAGR",val:pct(sipResult.cagr),color:t.text},{label:"Wealth Multiplier",val:fmt(sipResult.total/sipResult.invested,2)+"x",color:t.accent}].map(m=>(<div key={m.label} style={s.mBox}><div style={s.mLabel}>{m.label}</div><div style={{...s.mVal,color:m.color}}>{m.val}</div></div>))}
+                  {[{label:"Total Invested",val:fmtCr(sipResult.invested),color:t.text},{label:"SIP Corpus",val:fmtCr(sipResult.sipFV),color:t.green},{label:"Lumpsum Corpus",val:fmtCr(sipResult.lsFV),color:t.green},{label:"Total Corpus",val:fmtCr(sipResult.total),color:t.accent},{label:"Estimated Gain",val:fmtCr(sipResult.gain),color:sipResult.gain>=0?t.green:t.red},{label:"Applied CAGR",val:pct(sipResult.cagr),color:t.text},{label:"Wealth Multiplier",val:fmt(sipResult.total/sipResult.invested,2)+"x",color:t.accent}].map(m=>(<div key={m.label} style={s.mBox}><div style={s.mLbl}>{m.label}</div><div style={{...s.mVal,color:m.color}}>{m.val}</div></div>))}
                 </div>
                 <div style={{backgroundColor:t.bg,border:`1px solid ${t.border}`,borderRadius:12,padding:18}}>
                   <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Investment Breakdown</div>
@@ -851,8 +854,20 @@ export default function App() {
           <div>
             <div style={{...s.card,marginBottom:16}}>
               <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:16}}>
-                {cmpFunds.map((f,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:6,backgroundColor:t.bg,border:`1.5px solid ${COMPARE_COLORS[i%COMPARE_COLORS.length]}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:500}}><span style={{width:8,height:8,borderRadius:"50%",backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],display:"inline-block"}}/><span style={{maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name}</span><span onClick={()=>removeCmpFund(i)} style={{cursor:"pointer",color:t.textMuted,fontSize:14,marginLeft:2,lineHeight:1}}>×</span></div>))}
-                {cmpFunds.length<6&&(<div ref={cmpSearchRef} style={{position:"relative",flex:"1 1 240px",minWidth:200}}><span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:t.textMuted,fontSize:13,pointerEvents:"none"}}>🔍</span><input style={{...s.sinput,paddingLeft:34,fontSize:13}} placeholder="+ Add another fund to compare…" value={cmpQuery} onChange={e=>handleCmpSearch(e.target.value)}/><Dropdown items={cmpSugg} onSelect={addCmpFund}/></div>)}
+                {cmpFunds.map((f,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:6,backgroundColor:t.bg,border:`1.5px solid ${COMPARE_COLORS[i%COMPARE_COLORS.length]}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:500}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],display:"inline-block"}}/>
+                    <span style={{maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name}</span>
+                    <span onClick={()=>setCmpFunds(p=>p.filter((_,idx)=>idx!==i))} style={{cursor:"pointer",color:t.textMuted,fontSize:16,marginLeft:2,lineHeight:1}}>×</span>
+                  </div>
+                ))}
+                {cmpFunds.length<6&&(
+                  <div ref={cmpSearchRef} style={{position:"relative",flex:"1 1 240px",minWidth:200}}>
+                    <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:t.textMuted,fontSize:13,pointerEvents:"none"}}>🔍</span>
+                    <input style={{...s.sinput,paddingLeft:34,fontSize:13}} placeholder="+ Add another fund to compare…" value={cmpQuery} onChange={e=>handleCmpSearch(e.target.value)}/>
+                    <Dropdown items={cmpSugg} onSelect={addCmpFund}/>
+                  </div>
+                )}
                 {cmpLoading&&<span style={{color:t.textMuted,fontSize:12}}>Loading…</span>}
               </div>
               {cmpFunds.length<2&&<div style={{color:t.textMuted,fontSize:13}}>👆 Add at least 2 funds to compare. The current fund is pre-loaded.</div>}
@@ -861,7 +876,9 @@ export default function App() {
             {cmpFunds.length>=2&&(
               <>
                 <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
-                  {["NAV","Returns","Risk","Best/Worst","Rolling"].map(ct=>(<button key={ct} onClick={()=>setCmpTab(ct)} style={{padding:"7px 18px",borderRadius:8,border:`1px solid ${cmpTab===ct?t.accent:t.border}`,backgroundColor:cmpTab===ct?t.accent:t.chip,color:cmpTab===ct?"#fff":t.text,cursor:"pointer",fontSize:13,fontWeight:cmpTab===ct?600:400}}>{ct}</button>))}
+                  {["NAV","Returns","Risk","Best/Worst","Rolling"].map(ct=>(
+                    <button key={ct} onClick={()=>setCmpTab(ct)} style={{padding:"7px 18px",borderRadius:8,border:`1px solid ${cmpTab===ct?t.accent:t.border}`,backgroundColor:cmpTab===ct?t.accent:t.chip,color:cmpTab===ct?"#fff":t.text,cursor:"pointer",fontSize:13,fontWeight:cmpTab===ct?600:400}}>{ct}</button>
+                  ))}
                 </div>
 
                 {cmpTab==="NAV"&&cmpRebased&&(
@@ -869,12 +886,18 @@ export default function App() {
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:16}}>
                       <div><div style={s.ctitle}>NAV (Rebased to 100)</div><div style={{fontSize:12,color:t.textMuted}}>Common range: {cmpRebased.startDate} → {cmpRebased.endDate}</div></div>
                       <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
-                        {cmpRebased.series.map((s2,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}><span style={{width:20,height:3,backgroundColor:s2.color,display:"inline-block",borderRadius:2}}/><span style={{maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:t.textSub}}>{s2.name.split("–")[0].trim()}</span></div>))}
+                        {cmpRebased.series.map((s2,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+                            <span style={{width:20,height:3,backgroundColor:s2.color,display:"inline-block",borderRadius:2}}/>
+                            <span style={{maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:t.textSub}}>{s2.name.split("–")[0].trim()}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                     <div style={{height:340}}><CompareChart series={cmpRebased.series} t={t}/></div>
                   </div>
                 )}
+                {cmpTab==="NAV"&&!cmpRebased&&<div style={{...s.card,color:t.textMuted,textAlign:"center",padding:40}}>No common date range found between these funds.</div>}
 
                 {cmpTab==="Returns"&&(
                   <div style={s.card}>
@@ -883,7 +906,12 @@ export default function App() {
                       <table style={s.table}>
                         <thead><tr><th style={s.thL}>Fund</th>{["1D","1M","3M","6M","1Y CAGR","3Y CAGR","5Y CAGR","Since Inception"].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
                         <tbody>
-                          {cmpFunds.map((f,i)=>{const st=cmpStats[i];if(!st) return null;return(<tr key={i}><td style={{...s.tdL,maxWidth:220}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name}</span></div></td>{[st.ret1d,(()=>{const n=getNavAt(f.data,30);return n?(st.latest-n)/n*100:null;})(),(()=>{const n=getNavAt(f.data,91);return n?(st.latest-n)/n*100:null;})(),(()=>{const n=getNavAt(f.data,182);return n?(st.latest-n)/n*100:null;})(),st.ret1y,st.cagr3y,st.cagr5y,st.cagrAll].map((v,j)=><td key={j} style={{...s.td,...cv(v)}}>{pct(v)}</td>)}</tr>);})}
+                          {cmpFunds.map((f,i)=>{ const st=cmpStats[i]; if(!st) return null; return(
+                            <tr key={i}>
+                              <td style={{...s.tdL,maxWidth:220}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name}</span></div></td>
+                              {[st.ret1d,(() => { const n=getNavAt(f.data,30);  return n?(st.latest-n)/n*100:null; })(),(() => { const n=getNavAt(f.data,91);  return n?(st.latest-n)/n*100:null; })(),(() => { const n=getNavAt(f.data,182); return n?(st.latest-n)/n*100:null; })(),st.ret1y,st.cagr3y,st.cagr5y,st.cagrAll].map((v,j)=><td key={j} style={{...s.td,...cv(v)}}>{pct(v)}</td>)}
+                            </tr>
+                          ); })}
                         </tbody>
                       </table>
                     </div>
@@ -897,7 +925,15 @@ export default function App() {
                       <table style={s.table}>
                         <thead><tr><th style={s.thL}>Fund</th>{["Sharpe (3Y)","Sortino (3Y)","Std Dev %","Max Drawdown"].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
                         <tbody>
-                          {cmpFunds.map((f,i)=>{const st=cmpStats[i];if(!st) return null;return(<tr key={i}><td style={{...s.tdL,maxWidth:220}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name}</span></div></td><td style={{...s.td,color:(st.sharpe??0)>=1?t.green:t.textSub,fontWeight:600}}>{st.sharpe!=null?fmt(st.sharpe):"--"}</td><td style={{...s.td,color:(st.sortino??0)>=1?t.green:t.textSub,fontWeight:600}}>{st.sortino!=null?fmt(st.sortino):"--"}</td><td style={{...s.td,color:t.textSub}}>{st.stdDev!=null?fmt(st.stdDev)+"%":"--"}</td><td style={{...s.td,color:t.red,fontWeight:600}}>{pct(st.maxDD)}</td></tr>);})}
+                          {cmpFunds.map((f,i)=>{ const st=cmpStats[i]; if(!st) return null; return(
+                            <tr key={i}>
+                              <td style={{...s.tdL,maxWidth:220}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name}</span></div></td>
+                              <td style={{...s.td,color:(st.sharpe??0)>=1?t.green:t.textSub,fontWeight:600}}>{st.sharpe!=null?fmt(st.sharpe):"--"}</td>
+                              <td style={{...s.td,color:(st.sortino??0)>=1?t.green:t.textSub,fontWeight:600}}>{st.sortino!=null?fmt(st.sortino):"--"}</td>
+                              <td style={{...s.td,color:t.textSub}}>{st.stdDev!=null?fmt(st.stdDev)+"%":"--"}</td>
+                              <td style={{...s.td,color:t.red,fontWeight:600}}>{pct(st.maxDD)}</td>
+                            </tr>
+                          ); })}
                         </tbody>
                       </table>
                     </div>
@@ -914,7 +950,15 @@ export default function App() {
                           <table style={s.table}>
                             <thead><tr><th style={s.thL}>Fund</th><th style={{...s.th,color:t.green}}>Best Return</th><th style={s.th}>Best Period</th><th style={{...s.th,color:t.red}}>Worst Return</th><th style={s.th}>Worst Period</th></tr></thead>
                             <tbody>
-                              {cmpFunds.map((f,i)=>{const bw=cmpBW[i]?.[period];if(!bw) return null;return(<tr key={i}><td style={{...s.tdL,maxWidth:200}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name}</span></div></td><td style={{...s.td,color:t.green,fontWeight:600}}>{bw.best?fmt(bw.best.ret)+"%":"--"}</td><td style={{...s.td,color:t.textMuted,fontSize:11}}>{bw.best?`${bw.best.begin} → ${bw.best.end}`:"--"}</td><td style={{...s.td,color:t.red,fontWeight:600}}>{bw.worst?fmt(bw.worst.ret)+"%":"--"}</td><td style={{...s.td,color:t.textMuted,fontSize:11}}>{bw.worst?`${bw.worst.begin} → ${bw.worst.end}`:"--"}</td></tr>);})}
+                              {cmpFunds.map((f,i)=>{ const bw=cmpBW[i]?.[period]; if(!bw) return null; return(
+                                <tr key={i}>
+                                  <td style={{...s.tdL,maxWidth:200}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name}</span></div></td>
+                                  <td style={{...s.td,color:t.green,fontWeight:600}}>{bw.best?fmt(bw.best.ret)+"%":"--"}</td>
+                                  <td style={{...s.td,color:t.textMuted,fontSize:11}}>{bw.best?`${bw.best.begin} → ${bw.best.end}`:"--"}</td>
+                                  <td style={{...s.td,color:t.red,fontWeight:600}}>{bw.worst?fmt(bw.worst.ret)+"%":"--"}</td>
+                                  <td style={{...s.td,color:t.textMuted,fontSize:11}}>{bw.worst?`${bw.worst.begin} → ${bw.worst.end}`:"--"}</td>
+                                </tr>
+                              ); })}
                             </tbody>
                           </table>
                         </div>
@@ -927,7 +971,9 @@ export default function App() {
                   <div style={s.card}>
                     <div style={{...s.ctitle,marginBottom:12}}>Rolling Returns Comparison (CAGR)</div>
                     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-                      {[1,3,5,7,10].map(y=>(<button key={y} onClick={()=>setCmpRollingYrs(y)} style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${cmpRollingYrs===y?t.accent:t.border}`,backgroundColor:cmpRollingYrs===y?t.accent:t.chip,color:cmpRollingYrs===y?"#fff":t.text,cursor:"pointer",fontSize:13,fontWeight:cmpRollingYrs===y?600:400}}>{y}Y</button>))}
+                      {[1,3,5,7,10].map(y=>(
+                        <button key={y} onClick={()=>setCmpRollingYrs(y)} style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${cmpRollingYrs===y?t.accent:t.border}`,backgroundColor:cmpRollingYrs===y?t.accent:t.chip,color:cmpRollingYrs===y?"#fff":t.text,cursor:"pointer",fontSize:13,fontWeight:cmpRollingYrs===y?600:400}}>{y}Y</button>
+                      ))}
                     </div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:14}}>
                       {cmpFunds.map((f,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}><span style={{width:20,height:3,backgroundColor:COMPARE_COLORS[i%COMPARE_COLORS.length],display:"inline-block",borderRadius:2}}/><span style={{color:t.textSub,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name?.split("–")[0].trim()}</span></div>))}
@@ -942,7 +988,9 @@ export default function App() {
           </div>
         )}
 
-        <button onClick={()=>{setFund(null);setError(null);setSipResult(null);}} style={{padding:"9px 22px",borderRadius:9,border:`1px solid ${t.border}`,backgroundColor:t.chip,color:t.text,cursor:"pointer",fontSize:13,marginTop:10}}>← Back to Search</button>
+        <button onClick={()=>{setFund(null);setError(null);setSipResult(null);}} style={{padding:"9px 22px",borderRadius:9,border:`1px solid ${t.border}`,backgroundColor:t.chip,color:t.text,cursor:"pointer",fontSize:13,marginTop:10}}>
+          ← Back to Search
+        </button>
       </div>
     </div>
   );
