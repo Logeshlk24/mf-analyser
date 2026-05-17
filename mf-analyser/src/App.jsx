@@ -269,6 +269,7 @@ function useThrottledTip(){
 function LineChart({asc,t,range}){
   const{tip,setTip,clearTip}=useThrottledTip();
   const W=900,H=300;
+  const gidRef=useRef("gc"+Math.random().toString(36).slice(2,7));
 
   const fd=useMemo(()=>{
     if(!asc?.length) return[];
@@ -291,7 +292,7 @@ function LineChart({asc,t,range}){
     const pts=fd.map((d,i)=>`${xf(i)},${yf(d.nav)}`).join(" ");
     const isUp=fd[fd.length-1].nav>=fd[0].nav;
     const col=isUp?t.green:t.red;
-    const gid="gc"+Math.random().toString(36).slice(2,7);
+    const gid=gidRef.current;
     const step=Math.max(1,Math.floor(fd.length/7));
     const xL=[];
     for(let i=0;i<fd.length;i+=step){
@@ -301,15 +302,22 @@ function LineChart({asc,t,range}){
     return{navs,minV,maxV,pts,col,gid,xL,pad,W2,H2,xf,yf};
   },[fd,t]);
 
+  // Store latest fd+geometry in a ref so handleMove never has stale closures
+  const chartRef=useRef({});
+  useEffect(()=>{
+    if(fd.length>=2) chartRef.current={fd,W2:W-72-20,padL:72,xf:i=>72+(i/(fd.length-1))*(W-72-20),yf:v=>{const navs=fd.map(d=>d.nav);const minV=Math.min(...navs),maxV=Math.max(...navs);return 20+(1-(v-minV)/(maxV-minV||1))*(H-20-48);}};
+  },[fd]);
+
   const handleMove=useCallback((e)=>{
-    if(!fd.length||!W2) return;
+    const{fd:cfd,W2:cW2,padL,xf:cxf,yf:cyf}=chartRef.current;
+    if(!cfd?.length||!cW2) return;
     const rect=e.currentTarget.getBoundingClientRect();
     const svgX=(e.clientX-rect.left)/rect.width*W;
-    const idx=Math.max(0,Math.min(fd.length-1,Math.round((svgX-pad.l)/W2*(fd.length-1))));
-    const d=fd[idx];
-    setTip({x:(xf(idx)/W)*rect.width,y:(yf(d.nav)/H)*rect.height,
+    const idx=Math.max(0,Math.min(cfd.length-1,Math.round((svgX-padL)/cW2*(cfd.length-1))));
+    const d=cfd[idx];
+    setTip({x:(cxf(idx)/W)*rect.width,y:(cyf(d.nav)/H)*rect.height,
       date:fmtDate(d.date),lines:[{label:"NAV",val:`₹${fmt(d.nav)}`}]});
-  },[fd,W2,pad,xf,yf]);
+  },[]);
 
   if(fd.length<2) return<div style={{color:t.textMuted,textAlign:"center",paddingTop:60}}>Not enough data for this range</div>;
 
@@ -520,6 +528,40 @@ function CompareRollingChart({series,t}){
   );
 }
 
+// ─── Standalone UI components (OUTSIDE App to prevent remount on every render) ─
+function Dropdown({items,onSelect,styles,t}){
+  if(!items?.length) return null;
+  return(
+    <div style={styles.drop}>
+      {items.map(su=>(
+        <div key={su.schemeCode} style={styles.ditem}
+          onMouseEnter={e=>e.currentTarget.style.backgroundColor=t.chip}
+          onMouseLeave={e=>e.currentTarget.style.backgroundColor="transparent"}
+          onClick={()=>onSelect(su.schemeCode)}>
+          <span style={{flex:1,paddingRight:8,lineHeight:1.4}}>{su.schemeName}</span>
+          <span style={{color:t.textMuted,fontSize:11,whiteSpace:"nowrap"}}>#{su.schemeCode}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RangeBtns({ranges,active,onSet,t}){
+  return(
+    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+      {ranges.map(r=>(
+        <button key={r} onClick={()=>onSet(r)} style={{
+          padding:"5px 13px",borderRadius:7,
+          border:`1px solid ${active===r?t.accent:t.border}`,
+          backgroundColor:active===r?t.accent:t.chip,
+          color:active===r?"#fff":t.text,
+          cursor:"pointer",fontSize:12,fontWeight:active===r?600:400
+        }}>{r}</button>
+      ))}
+    </div>
+  );
+}
+
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App(){
   const[isDark,setIsDark]           =useState(false);
@@ -653,28 +695,7 @@ export default function App(){
   };
   const cv=v=>({color:v==null||isNaN(v)?t.textMuted:v>=0?t.green:t.red,fontWeight:600});
 
-  const Dropdown=({items,onSelect})=>items.length>0?(
-    <div style={s.drop}>{items.map(su=>(
-      <div key={su.schemeCode} style={s.ditem}
-        onMouseEnter={e=>e.currentTarget.style.backgroundColor=t.chip}
-        onMouseLeave={e=>e.currentTarget.style.backgroundColor="transparent"}
-        onClick={()=>onSelect(su.schemeCode)}>
-        <span style={{flex:1,paddingRight:8,lineHeight:1.4}}>{su.schemeName}</span>
-        <span style={{color:t.textMuted,fontSize:11,whiteSpace:"nowrap"}}>#{su.schemeCode}</span>
-      </div>
-    ))}</div>
-  ):null;
-
-  const RangeBtns=({ranges,active,onSet})=>(
-    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-      {ranges.map(r=>(
-        <button key={r} onClick={()=>onSet(r)} style={{padding:"5px 13px",borderRadius:7,
-          border:`1px solid ${active===r?t.accent:t.border}`,
-          backgroundColor:active===r?t.accent:t.chip,color:active===r?"#fff":t.text,
-          cursor:"pointer",fontSize:12,fontWeight:active===r?600:400}}>{r}</button>
-      ))}
-    </div>
-  );
+  // Dropdown and RangeBtns are defined outside App (see above) to prevent remount on render
 
   // ── HOME ──────────────────────────────────────────────────────────────────────
   if(!fund&&!loading) return(
@@ -691,7 +712,7 @@ export default function App(){
           <span style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",fontSize:18,color:t.textMuted,pointerEvents:"none"}}>🔍</span>
           <input style={{width:"100%",padding:"15px 20px 15px 50px",borderRadius:14,border:`1.5px solid ${t.border}`,backgroundColor:t.input,color:t.text,fontSize:16,outline:"none",boxSizing:"border-box",boxShadow:t.shadow}} placeholder="Search e.g. Parag Parikh, HDFC, Nifty 50…" value={query} onChange={e=>handleSearch(e.target.value)}/>
           {searching&&<div style={{position:"absolute",right:16,top:"50%",transform:"translateY(-50%)",color:t.textMuted,fontSize:12}}>Searching…</div>}
-          <Dropdown items={suggestions} onSelect={loadFund}/>
+          <Dropdown items={suggestions} onSelect={loadFund} styles={s} t={t}/>
         </div>
         <div>
           <div style={{fontSize:11,color:t.textMuted,marginBottom:10,letterSpacing:1.2,textTransform:"uppercase"}}>✦ Popular Funds</div>
@@ -728,7 +749,7 @@ export default function App(){
         <div ref={searchRef} style={s.sw}>
           <span style={s.sico}>🔍</span>
           <input style={s.si} placeholder="Search another fund…" value={query} onChange={e=>handleSearch(e.target.value)}/>
-          <Dropdown items={suggestions} onSelect={loadFund}/>
+          <Dropdown items={suggestions} onSelect={loadFund} styles={s} t={t}/>
         </div>
         <button style={s.tbtn} onClick={()=>setIsDark(p=>!p)}>{isDark?"☀️ Light":"🌙 Dark"}</button>
       </nav>
@@ -774,7 +795,7 @@ export default function App(){
           <div style={s.card}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:18}}>
               <div style={s.ct}>NAV History</div>
-              <RangeBtns ranges={["YTD","1Y","3Y","5Y","ALL"]} active={navRange} onSet={setNavRange}/>
+              <RangeBtns ranges={["YTD","1Y","3Y","5Y","ALL"]} active={navRange} onSet={setNavRange} t={t}/>
             </div>
             <div style={{height:300}}><LineChart asc={fund.asc} t={t} range={navRange}/></div>
             {stats&&<div style={{display:"flex",gap:20,marginTop:14,flexWrap:"wrap"}}>
@@ -978,7 +999,7 @@ export default function App(){
                   <div ref={cmpSearchRef} style={{position:"relative",flex:"1 1 240px",minWidth:200}}>
                     <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:t.textMuted,fontSize:13,pointerEvents:"none"}}>🔍</span>
                     <input style={{...s.si,paddingLeft:34,fontSize:13}} placeholder="+ Add another fund to compare…" value={cmpQuery} onChange={e=>handleCmpSearch(e.target.value)}/>
-                    <Dropdown items={cmpSugg} onSelect={addCmpFund}/>
+                    <Dropdown items={cmpSugg} onSelect={addCmpFund} styles={s} t={t}/>
                   </div>
                 )}
                 {cmpLoading&&<span style={{color:t.textMuted,fontSize:12}}>Loading…</span>}
