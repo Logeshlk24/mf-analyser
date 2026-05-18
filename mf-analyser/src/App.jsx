@@ -232,10 +232,22 @@ function rebaseSeries(funds){
 // ─── Tooltip ───────────────────────────────────────────────────────────────────
 function Tooltip({tip,t}){
   if(!tip) return null;
+  // Place tooltip above the point; if too close to top, flip below
+  const aboveY=tip.y-12;
+  const useBelow=aboveY<50;
   return(
-    <div style={{position:"absolute",left:tip.x,top:tip.y,transform:"translate(-50%,-100%) translateY(-12px)",
-      backgroundColor:t.tooltip,color:t.tooltipText,borderRadius:8,padding:"8px 12px",fontSize:12,
-      pointerEvents:"none",zIndex:50,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",whiteSpace:"nowrap",border:`1px solid rgba(255,255,255,0.1)`}}>
+    <div style={{
+      position:"absolute",
+      left:tip.x,
+      top:useBelow?tip.y+16:tip.y,
+      transform:useBelow?"translate(-50%,0)":"translate(-50%,-100%)",
+      backgroundColor:t.tooltip,color:t.tooltipText,
+      borderRadius:8,padding:"8px 12px",fontSize:12,
+      pointerEvents:"none",zIndex:50,
+      boxShadow:"0 4px 20px rgba(0,0,0,0.25)",
+      whiteSpace:"nowrap",
+      border:`1px solid rgba(128,128,128,0.15)`
+    }}>
       <div style={{fontWeight:700,marginBottom:4,fontSize:11,opacity:0.7,letterSpacing:"0.3px"}}>{tip.date}</div>
       {tip.lines.map((l,i)=>(
         <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:i<tip.lines.length-1?3:0}}>
@@ -244,8 +256,21 @@ function Tooltip({tip,t}){
           <span style={{fontWeight:700}}>{l.val}</span>
         </div>
       ))}
-      <div style={{position:"absolute",bottom:-5,left:"50%",transform:"translateX(-50%)",
-        width:0,height:0,borderLeft:"5px solid transparent",borderRight:"5px solid transparent",borderTop:`5px solid ${t.tooltip}`}}/>
+      {/* Arrow */}
+      {!useBelow&&<div style={{
+        position:"absolute",bottom:-5,left:"50%",transform:"translateX(-50%)",
+        width:0,height:0,
+        borderLeft:"5px solid transparent",
+        borderRight:"5px solid transparent",
+        borderTop:`5px solid ${t.tooltip}`
+      }}/>}
+      {useBelow&&<div style={{
+        position:"absolute",top:-5,left:"50%",transform:"translateX(-50%)",
+        width:0,height:0,
+        borderLeft:"5px solid transparent",
+        borderRight:"5px solid transparent",
+        borderBottom:`5px solid ${t.tooltip}`
+      }}/>}
     </div>
   );
 }
@@ -270,32 +295,43 @@ function CalYearBarChart({data,t}){
   const{tip,setTip,clearTip}=useThrottledTip();
   const W=900,H=300;
 
-  const{maxAbs,pad,W2,H2,zY,barW}=useMemo(()=>{
-    if(!data?.length) return{};
+  const geom=useMemo(()=>{
+    if(!data?.length) return null;
     const maxAbs=Math.max(...data.map(d=>Math.abs(d.ret)),1);
     const pad={t:30,b:44,l:50,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
     const zY=pad.t+H2/2;
     const barW=Math.max(10,Math.min(60,(W2/data.length)-6));
-    return{maxAbs,pad,W2,H2,zY,barW};
+    const slotW=W2/data.length;
+    return{maxAbs,pad,W2,H2,zY,barW,slotW};
   },[data]);
 
-  const handleEnter=useCallback((e,d,i)=>{
-    if(!pad||!W2) return;
-    const rect=e.currentTarget.closest("svg").getBoundingClientRect();
-    const cx=pad.l+(i+0.5)*(W2/data.length);
+  // Use onMouseMove on SVG for accurate hit detection
+  const handleMove=useCallback((e)=>{
+    if(!geom) return;
+    const{pad,W2,H2,zY,maxAbs,slotW}=geom;
+    const rect=e.currentTarget.getBoundingClientRect();
+    const svgX=(e.clientX-rect.left)/rect.width*W;
+    const rawIdx=Math.floor((svgX-pad.l)/slotW);
+    const idx=Math.max(0,Math.min(data.length-1,rawIdx));
+    const d=data[idx];
+    const cx=pad.l+(idx+0.5)*slotW;
+    const barH=Math.abs(d.ret)/maxAbs*(H2/2);
+    const tipY=d.ret>=0?(zY-barH):(zY+barH);
     setTip({
       x:(cx/W)*rect.width,
-      y:(zY/H)*rect.height,
+      y:(tipY/H)*rect.height,
       date:String(d.year),
       lines:[{label:"Return",val:pct(d.ret),color:d.ret>=0?t.green:t.red}]
     });
-  },[data,pad,W2,zY,t]);
+  },[data,geom,t]);
 
-  if(!data?.length) return null;
+  if(!data?.length||!geom) return null;
+  const{maxAbs,pad,W2,H2,zY,barW,slotW}=geom;
 
   return(
     <div style={{position:"relative",height:300}}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",display:"block"}} onMouseLeave={clearTip}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",display:"block",cursor:"default"}}
+        onMouseMove={handleMove} onMouseLeave={clearTip}>
         {/* Grid lines */}
         {[-20,-10,0,10,20,30,40,50,60].map((v,i)=>{
           const yp=zY-(v/maxAbs)*(H2/2);
@@ -311,26 +347,31 @@ function CalYearBarChart({data,t}){
         })}
         {/* Bars */}
         {data.map((d,i)=>{
-          const cx=pad.l+(i+0.5)*(W2/data.length);
+          const cx=pad.l+(i+0.5)*slotW;
           const barH=Math.abs(d.ret)/maxAbs*(H2/2);
           const y=d.ret>=0?zY-barH:zY;
           const col=d.ret>=0?t.green:t.red;
           return(
-            <g key={d.year} style={{cursor:"pointer"}} onMouseEnter={e=>handleEnter(e,d,i)}>
+            <g key={d.year}>
               <rect x={cx-barW/2} y={y} width={barW} height={Math.max(barH,1.5)}
                 fill={col} opacity="0.85" rx="3"/>
-              {/* Value label on bar */}
               <text x={cx} y={d.ret>=0?y-5:y+barH+13}
                 textAnchor="middle" fontSize="9" fill={col} fontWeight="600">
                 {fmt(d.ret)}%
               </text>
-              {/* Year label */}
               <text x={cx} y={H-8} textAnchor="middle" fontSize="10" fill={t.textMuted}>
                 {d.year}
               </text>
             </g>
           );
         })}
+        {/* Hover highlight column */}
+        {tip&&(()=>{
+          const rawIdx=data.findIndex(d=>String(d.year)===tip.date);
+          if(rawIdx<0) return null;
+          const cx=pad.l+(rawIdx+0.5)*slotW;
+          return<line x1={cx} x2={cx} y1={pad.t} y2={pad.t+H2} stroke={t.textMuted} strokeWidth="1" strokeDasharray="3,3" opacity="0.5"/>;
+        })()}
       </svg>
       {tip&&<Tooltip tip={tip} t={t}/>}
     </div>
@@ -376,19 +417,35 @@ function LineChart({asc,t,range}){
 
   // Store latest fd+geometry in a ref so handleMove never has stale closures
   const chartRef=useRef({});
+  const hovIdxRef=useRef(0);
   useEffect(()=>{
-    if(fd.length>=2) chartRef.current={fd,W2:W-72-20,padL:72,xf:i=>72+(i/(fd.length-1))*(W-72-20),yf:v=>{const navs=fd.map(d=>d.nav);const minV=Math.min(...navs),maxV=Math.max(...navs);return 20+(1-(v-minV)/(maxV-minV||1))*(H-20-48);}};
+    if(fd.length>=2){
+      const padL=72, W2c=W-72-20, H2c=H-20-48;
+      const navs=fd.map(d=>d.nav);
+      const minV=Math.min(...navs), maxV=Math.max(...navs);
+      chartRef.current={
+        fd,
+        padL, W2:W2c, padT:20,
+        H2:H2c,
+        xf:i=>padL+(i/(fd.length-1))*W2c,
+        yf:v=>20+(1-(v-minV)/(maxV-minV||1))*H2c,
+      };
+    }
   },[fd]);
 
   const handleMove=useCallback((e)=>{
-    const{fd:cfd,W2:cW2,padL,xf:cxf,yf:cyf}=chartRef.current;
+    const{fd:cfd,W2:cW2,padL,padT,H2:cH2,xf:cxf,yf:cyf}=chartRef.current;
     if(!cfd?.length||!cW2) return;
     const rect=e.currentTarget.getBoundingClientRect();
     const svgX=(e.clientX-rect.left)/rect.width*W;
     const idx=Math.max(0,Math.min(cfd.length-1,Math.round((svgX-padL)/cW2*(cfd.length-1))));
+    hovIdxRef.current=idx;
     const d=cfd[idx];
-    setTip({x:(cxf(idx)/W)*rect.width,y:(cyf(d.nav)/H)*rect.height,
-      date:fmtDate(d.date),lines:[{label:"NAV",val:`₹${fmt(d.nav)}`}]});
+    const tipX=(cxf(idx)/W)*rect.width;
+    // clamp tipY so tooltip stays within chart area
+    const rawY=(cyf(d.nav)/H)*rect.height;
+    const tipY=Math.max(30,Math.min(rect.height-60,rawY));
+    setTip({x:tipX, y:tipY, _idx:idx, date:fmtDate(d.date), lines:[{label:"NAV",val:`₹${fmt(d.nav)}`}]});
   },[]);
 
   if(fd.length<2) return<div style={{color:t.textMuted,textAlign:"center",paddingTop:60}}>Not enough data for this range</div>;
@@ -409,7 +466,18 @@ function LineChart({asc,t,range}){
         })}
         <polygon points={`${pad.l},${pad.t+H2} ${pts} ${pad.l+W2},${pad.t+H2}`} fill={`url(#${gid})`}/>
         <polyline points={pts} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
-        {tip&&<line x1={(tip.x/((W2/(fd.length-1))*fd.length))*W2+pad.l} x2={(tip.x/((W2/(fd.length-1))*fd.length))*W2+pad.l} y1={pad.t} y2={pad.t+H2} stroke={t.textMuted} strokeWidth="1" strokeDasharray="3,3" opacity="0.5"/>}
+        {/* Crosshair — vertical line + dot at exact data point */}
+        {tip&&tip._idx!=null&&(()=>{
+          const cx=xf(tip._idx);
+          const cy=yf(fd[tip._idx]?.nav??0);
+          return(
+            <g>
+              <line x1={cx} x2={cx} y1={pad.t} y2={pad.t+H2}
+                stroke={t.textMuted} strokeWidth="1" strokeDasharray="4,4" opacity="0.6"/>
+              <circle cx={cx} cy={cy} r="4" fill={col} stroke={t.surface} strokeWidth="2"/>
+            </g>
+          );
+        })()}
         {xL.map((l,i)=><text key={i} x={l.x} y={H-10} textAnchor="middle" fontSize="11" fill={t.textMuted}>{l.label}</text>)}
       </svg>
       {tip&&<Tooltip tip={tip} t={t}/>}
