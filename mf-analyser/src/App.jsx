@@ -265,6 +265,78 @@ function useThrottledTip(){
   return{tip,setTip:throttledSet,clearTip:clear};
 }
 
+// ─── Calendar Year Bar Chart (for Returns tab) ────────────────────────────────
+function CalYearBarChart({data,t}){
+  const{tip,setTip,clearTip}=useThrottledTip();
+  const W=900,H=300;
+
+  const{maxAbs,pad,W2,H2,zY,barW}=useMemo(()=>{
+    if(!data?.length) return{};
+    const maxAbs=Math.max(...data.map(d=>Math.abs(d.ret)),1);
+    const pad={t:30,b:44,l:50,r:20},W2=W-pad.l-pad.r,H2=H-pad.t-pad.b;
+    const zY=pad.t+H2/2;
+    const barW=Math.max(10,Math.min(60,(W2/data.length)-6));
+    return{maxAbs,pad,W2,H2,zY,barW};
+  },[data]);
+
+  const handleEnter=useCallback((e,d,i)=>{
+    if(!pad||!W2) return;
+    const rect=e.currentTarget.closest("svg").getBoundingClientRect();
+    const cx=pad.l+(i+0.5)*(W2/data.length);
+    setTip({
+      x:(cx/W)*rect.width,
+      y:(zY/H)*rect.height,
+      date:String(d.year),
+      lines:[{label:"Return",val:pct(d.ret),color:d.ret>=0?t.green:t.red}]
+    });
+  },[data,pad,W2,zY,t]);
+
+  if(!data?.length) return null;
+
+  return(
+    <div style={{position:"relative",height:300}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"100%",display:"block"}} onMouseLeave={clearTip}>
+        {/* Grid lines */}
+        {[-20,-10,0,10,20,30,40,50,60].map((v,i)=>{
+          const yp=zY-(v/maxAbs)*(H2/2);
+          if(yp<pad.t-4||yp>pad.t+H2+4) return null;
+          return(
+            <g key={i}>
+              <line x1={pad.l} x2={pad.l+W2} y1={yp} y2={yp}
+                stroke={t.border} strokeWidth={v===0?1.5:0.5}
+                strokeDasharray={v===0?"none":"3,3"}/>
+              <text x={pad.l-6} y={yp+4} textAnchor="end" fontSize="10" fill={t.textMuted}>{v}%</text>
+            </g>
+          );
+        })}
+        {/* Bars */}
+        {data.map((d,i)=>{
+          const cx=pad.l+(i+0.5)*(W2/data.length);
+          const barH=Math.abs(d.ret)/maxAbs*(H2/2);
+          const y=d.ret>=0?zY-barH:zY;
+          const col=d.ret>=0?t.green:t.red;
+          return(
+            <g key={d.year} style={{cursor:"pointer"}} onMouseEnter={e=>handleEnter(e,d,i)}>
+              <rect x={cx-barW/2} y={y} width={barW} height={Math.max(barH,1.5)}
+                fill={col} opacity="0.85" rx="3"/>
+              {/* Value label on bar */}
+              <text x={cx} y={d.ret>=0?y-5:y+barH+13}
+                textAnchor="middle" fontSize="9" fill={col} fontWeight="600">
+                {fmt(d.ret)}%
+              </text>
+              {/* Year label */}
+              <text x={cx} y={H-8} textAnchor="middle" fontSize="10" fill={t.textMuted}>
+                {d.year}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {tip&&<Tooltip tip={tip} t={t}/>}
+    </div>
+  );
+}
+
 // ─── Line Chart ────────────────────────────────────────────────────────────────
 function LineChart({asc,t,range}){
   const{tip,setTip,clearTip}=useThrottledTip();
@@ -362,7 +434,12 @@ function RollingChart({data,t,color}){
     const zY=yf(0);
     const step=Math.max(1,Math.floor(data.length/7));
     const xL=[];
-    for(let i=0;i<data.length;i+=step) xL.push({x:xf(i),label:String(new Date(data[i].ts??0).getUTCFullYear()||new Date(parseDate(data[i].date)).getFullYear())});
+    for(let i=0;i<data.length;i+=step){
+      const yr=data[i].ts>0
+        ? new Date(data[i].ts).getUTCFullYear()
+        : parseDate(data[i].date).getFullYear();
+      xL.push({x:xf(i),label:String(yr)});
+    }
     return{minV,maxV,pts,zY,xL,pad,W2,H2,xf,yf};
   },[data]);
 
@@ -516,12 +593,24 @@ function CompareRollingChart({series,t}){
         {series.map(s=>{
           const n=s.points.length;if(n<2)return null;
           const xf2=i=>pad.l+(i/(n-1))*W2,yf2=v=>pad.t+(1-(v-minV)/(maxV-minV||1))*H2;
-          const step=Math.max(1,Math.floor(n/7));
           return(<g key={s.name}>
             <polyline points={s.points.map((p,i)=>`${xf2(i)},${yf2(p.val)}`).join(" ")} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round"/>
-            {[...Array(Math.ceil(n/step))].map((_,k)=>{const i=Math.min(k*step,n-1);const dt=parseDate(s.points[i].date);return<text key={i} x={xf2(i)} y={H-10} textAnchor="middle" fontSize="11" fill={t.textMuted}>{dt.getFullYear()}</text>;})}
           </g>);
         })}
+        {/* X-axis labels — use longest series only */}
+        {(()=>{
+          const ref=series.reduce((a,b)=>a.points.length>b.points.length?a:b);
+          const n=ref.points.length; if(n<2) return null;
+          const xf2=i=>pad.l+(i/(n-1))*W2;
+          const step=Math.max(1,Math.floor(n/7));
+          return[...Array(Math.ceil(n/step))].map((_,k)=>{
+            const i=Math.min(k*step,n-1);
+            const yr=ref.points[i].ts>0
+              ? new Date(ref.points[i].ts).getUTCFullYear()
+              : parseDate(ref.points[i].date).getFullYear();
+            return<text key={i} x={xf2(i)} y={H-10} textAnchor="middle" fontSize="11" fill={t.textMuted}>{yr}</text>;
+          });
+        })()}
       </svg>
       {tip&&<Tooltip tip={tip} t={t}/>}
     </div>
@@ -577,7 +666,9 @@ export default function App(){
   const[error,setError]             =useState(null);
   const[activeTab,setActiveTab]     =useState("NAV Chart");
   const[navRange,setNavRange]       =useState("ALL");
+  const[returnsRange,setReturnsRange]=useState("ALL");
   const[rollingYears,setRollingYears]=useState(3);
+  const[rollingRange,setRollingRange]=useState("ALL");
   const[sip,setSip]                 =useState({lumpsum:100000,monthly:10000,duration:5,expense:1.5});
   const[sipResult,setSipResult]     =useState(null);
   const[cmpFunds,setCmpFunds]       =useState([]); // [{meta,asc}]
@@ -586,6 +677,7 @@ export default function App(){
   const[cmpLoading,setCmpLoading]   =useState(false);
   const[cmpTab,setCmpTab]           =useState("NAV");
   const[cmpRollingYrs,setCmpRollingYrs]=useState(3);
+  const[cmpRollingRange,setCmpRollingRange]=useState("ALL");
   const debRef=useRef(null),cmpDebRef=useRef(null);
   const searchRef=useRef(null),cmpSearchRef=useRef(null);
 
@@ -651,15 +743,41 @@ export default function App(){
   const stats     =useMemo(()=>fund?computeStats(fund.asc):null,                    [fund]);
   const trailing  =useMemo(()=>fund?computeTrailing(fund.asc,stats):[]              ,[fund,stats]);
   const calYear   =useMemo(()=>fund?computeCalYear(fund.asc):[]                     ,[fund]);
+  const calYearFiltered=useMemo(()=>{
+    if(!calYear.length) return [];
+    if(returnsRange==="ALL") return calYear;
+    const curYear=new Date().getFullYear();
+    const yrs=returnsRange==="3Y"?3:returnsRange==="5Y"?5:returnsRange==="7Y"?7:10;
+    return calYear.filter(r=>r.year>curYear-yrs);
+  },[calYear,returnsRange]);
   const annualVol =useMemo(()=>fund?computeAnnualVol(fund.asc):[]                   ,[fund]);
   const monthly   =useMemo(()=>activeTab==="Monthly Heatmap"&&fund?computeMonthly(fund.asc):{},[fund,activeTab]);
   const bestWorst =useMemo(()=>activeTab==="Best/Worst"&&fund?computeBestWorst(fund.asc):null,[fund,activeTab]);
   const rollingData=useMemo(()=>activeTab==="Rolling Returns"&&fund?computeRolling(fund.asc,rollingYears):[]  ,[fund,activeTab,rollingYears]);
+
+  // Filter rolling data by display range (separate from window size)
+  const rollingDataFiltered=useMemo(()=>{
+    if(!rollingData?.length) return [];
+    if(rollingRange==="ALL") return rollingData;
+    const nowTs=Date.now();
+    const yrs=rollingRange==="3Y"?3:rollingRange==="5Y"?5:10;
+    const cutTs=nowTs-yrs*365.25*86400000;
+    return rollingData.filter(d=>d.ts>=cutTs);
+  },[rollingData,rollingRange]);
   const cmpRebased=useMemo(()=>activeTab==="Compare"&&cmpFunds.length>=2?rebaseSeries(cmpFunds):null,[cmpFunds,activeTab]);
   const cmpRolling=useMemo(()=>activeTab==="Compare"&&cmpTab==="Rolling"?cmpFunds.map((f,i)=>{
     const pts=computeRolling(f.asc,cmpRollingYrs);
-    return{name:f.meta?.scheme_name,color:CC[i%CC.length],points:pts.map(p=>({date:p.date,val:p.cagr}))};
+    return{name:f.meta?.scheme_name,color:CC[i%CC.length],points:pts.map(p=>({date:p.date,ts:p.ts,val:p.cagr}))};
   }):[]  ,[cmpFunds,activeTab,cmpTab,cmpRollingYrs]);
+
+  const cmpRollingFiltered=useMemo(()=>{
+    if(!cmpRolling?.length) return [];
+    if(cmpRollingRange==="ALL") return cmpRolling;
+    const nowTs=Date.now();
+    const yrs=cmpRollingRange==="3Y"?3:cmpRollingRange==="5Y"?5:10;
+    const cutTs=nowTs-yrs*365.25*86400000;
+    return cmpRolling.map(s=>({...s,points:s.points.filter(p=>p.ts>=cutTs)}));
+  },[cmpRolling,cmpRollingRange]);
   const cmpStats  =useMemo(()=>cmpFunds.map(f=>computeStats(f.asc))                 ,[cmpFunds]);
   const cmpBW     =useMemo(()=>activeTab==="Compare"&&cmpTab==="Best/Worst"?cmpFunds.map(f=>computeBestWorst(f.asc)):[]  ,[cmpFunds,activeTab,cmpTab]);
 
@@ -820,6 +938,7 @@ export default function App(){
         {/* RETURNS */}
         {activeTab==="Returns"&&(
           <>
+            {/* Trailing Returns */}
             <div style={s.card}>
               <div style={s.ct}>Trailing Returns (%)</div>
               <div style={{overflowX:"auto"}}>
@@ -832,14 +951,45 @@ export default function App(){
                 </table>
               </div>
             </div>
+
+            {/* Calendar Year Returns with range filter */}
             <div style={s.card}>
-              <div style={s.ct}>Calendar Year Returns (%)</div>
-              <div style={{overflowX:"auto"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:16}}>
+                <div style={s.ct}>Calendar Year Returns (%)</div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,color:t.textSub,fontWeight:500}}>Show:</span>
+                  {["3Y","5Y","7Y","10Y","ALL"].map(r=>(
+                    <button key={r} onClick={()=>setReturnsRange(r)} style={{
+                      padding:"5px 13px",borderRadius:7,
+                      border:`1px solid ${returnsRange===r?t.accent:t.border}`,
+                      backgroundColor:returnsRange===r?t.accent:t.chip,
+                      color:returnsRange===r?"#fff":t.text,
+                      cursor:"pointer",fontSize:12,fontWeight:returnsRange===r?600:400
+                    }}>{r}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Table */}
+              <div style={{overflowX:"auto",marginBottom:20}}>
                 <table style={s.tbl}>
-                  <thead><tr><th style={s.thL}>Year</th>{calYear.map(r=><th key={r.year} style={s.th}>{r.year}</th>)}</tr></thead>
-                  <tbody><tr><td style={s.tdL}>Return (%)</td>{calYear.map(r=><td key={r.year} style={{...s.td,...cv(r.ret)}}>{fmt(r.ret)}</td>)}</tr></tbody>
+                  <thead>
+                    <tr>
+                      <th style={s.thL}>Year</th>
+                      {calYearFiltered.map(r=><th key={r.year} style={s.th}>{r.year}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={s.tdL}>Return (%)</td>
+                      {calYearFiltered.map(r=><td key={r.year} style={{...s.td,...cv(r.ret)}}>{fmt(r.ret)}</td>)}
+                    </tr>
+                  </tbody>
                 </table>
               </div>
+
+              {/* Bar chart */}
+              <CalYearBarChart data={calYearFiltered} t={t}/>
             </div>
           </>
         )}
@@ -922,16 +1072,30 @@ export default function App(){
         {/* ROLLING RETURNS */}
         {activeTab==="Rolling Returns"&&(
           <div style={s.card}>
-            <div style={{...s.ct,marginBottom:14}}>Rolling Returns (CAGR)</div>
-            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:16}}>
+              <div>
+                <div style={s.ct}>Rolling Returns (CAGR)</div>
+                <div style={{fontSize:12,color:t.textMuted,marginTop:-10}}>Rolling window size — each point shows CAGR over the selected period</div>
+              </div>
+            </div>
+            {/* Row 1: Rolling window */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+              <span style={{fontSize:12,color:t.textSub,fontWeight:500,whiteSpace:"nowrap"}}>Window:</span>
               {[1,3,5,7,10,12,15].map(y=>(
                 <button key={y} onClick={()=>setRollingYears(y)} style={{padding:"5px 16px",borderRadius:20,border:`1px solid ${rollingYears===y?t.accent:t.border}`,backgroundColor:rollingYears===y?t.accent:t.chip,color:rollingYears===y?"#fff":t.text,cursor:"pointer",fontSize:13,fontWeight:rollingYears===y?600:400}}>{y}Y</button>
               ))}
             </div>
-            <div style={{height:300}}><RollingChart data={rollingData} t={t}/></div>
-            {rollingData?.length>0&&(
+            {/* Row 2: Display range */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+              <span style={{fontSize:12,color:t.textSub,fontWeight:500,whiteSpace:"nowrap"}}>Show last:</span>
+              {["3Y","5Y","10Y","ALL"].map(r=>(
+                <button key={r} onClick={()=>setRollingRange(r)} style={{padding:"5px 13px",borderRadius:7,border:`1px solid ${rollingRange===r?t.accent:t.border}`,backgroundColor:rollingRange===r?t.accent:t.chip,color:rollingRange===r?"#fff":t.text,cursor:"pointer",fontSize:12,fontWeight:rollingRange===r?600:400}}>{r}</button>
+              ))}
+            </div>
+            <div style={{height:300}}><RollingChart data={rollingDataFiltered} t={t}/></div>
+            {rollingDataFiltered?.length>0&&(
               <div style={{display:"flex",gap:12,marginTop:18,flexWrap:"wrap"}}>
-                {[{label:"Min CAGR",val:Math.min(...rollingData.map(d=>d.cagr)),color:t.red},{label:"Max CAGR",val:Math.max(...rollingData.map(d=>d.cagr)),color:t.green},{label:"Avg CAGR",val:rollingData.reduce((a,b)=>a+b.cagr,0)/rollingData.length,color:t.accent},{label:"% Positive",val:rollingData.filter(d=>d.cagr>0).length/rollingData.length*100,color:t.green,suffix:"%"},{label:"Data Points",val:rollingData.length,color:t.textSub,suffix:""}].map(m=>(
+                {[{label:"Min CAGR",val:Math.min(...rollingDataFiltered.map(d=>d.cagr)),color:t.red},{label:"Max CAGR",val:Math.max(...rollingDataFiltered.map(d=>d.cagr)),color:t.green},{label:"Avg CAGR",val:rollingDataFiltered.reduce((a,b)=>a+b.cagr,0)/rollingDataFiltered.length,color:t.accent},{label:"% Positive",val:rollingDataFiltered.filter(d=>d.cagr>0).length/rollingDataFiltered.length*100,color:t.green,suffix:"%"},{label:"Data Points",val:rollingDataFiltered.length,color:t.textSub,suffix:""}].map(m=>(
                   <div key={m.label} style={s.mb}><div style={s.ml}>{m.label}</div><div style={{...s.mv,color:m.color,fontSize:18}}>{typeof m.val==="number"?fmt(m.val):m.val}{m.suffix??"%"}</div></div>
                 ))}
               </div>
@@ -1089,14 +1253,23 @@ export default function App(){
 
                 {cmpTab==="Rolling"&&(
                   <div style={s.card}>
-                    <div style={{...s.ct,marginBottom:12}}>Rolling Returns Comparison (CAGR)</div>
-                    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                    <div style={{...s.ct,marginBottom:4}}>Rolling Returns Comparison (CAGR)</div>
+                    <div style={{fontSize:12,color:t.textMuted,marginBottom:14}}>Window size — each point = CAGR over that period</div>
+                    {/* Window buttons */}
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,color:t.textSub,fontWeight:500,whiteSpace:"nowrap"}}>Window:</span>
                       {[1,3,5,7,10].map(y=>(<button key={y} onClick={()=>setCmpRollingYrs(y)} style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${cmpRollingYrs===y?t.accent:t.border}`,backgroundColor:cmpRollingYrs===y?t.accent:t.chip,color:cmpRollingYrs===y?"#fff":t.text,cursor:"pointer",fontSize:13,fontWeight:cmpRollingYrs===y?600:400}}>{y}Y</button>))}
                     </div>
+                    {/* Display range buttons */}
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,color:t.textSub,fontWeight:500,whiteSpace:"nowrap"}}>Show last:</span>
+                      {["3Y","5Y","10Y","ALL"].map(r=>(<button key={r} onClick={()=>setCmpRollingRange(r)} style={{padding:"5px 13px",borderRadius:7,border:`1px solid ${cmpRollingRange===r?t.accent:t.border}`,backgroundColor:cmpRollingRange===r?t.accent:t.chip,color:cmpRollingRange===r?"#fff":t.text,cursor:"pointer",fontSize:12,fontWeight:cmpRollingRange===r?600:400}}>{r}</button>))}
+                    </div>
+                    {/* Legend */}
                     <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:14}}>
                       {cmpFunds.map((f,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}><span style={{width:20,height:3,backgroundColor:CC[i%CC.length],display:"inline-block",borderRadius:2}}/><span style={{color:t.textSub,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.meta?.scheme_name?.split("–")[0].trim()}</span></div>))}
                     </div>
-                    <div style={{height:300}}><CompareRollingChart series={cmpRolling} t={t}/></div>
+                    <div style={{height:300}}><CompareRollingChart series={cmpRollingFiltered} t={t}/></div>
                   </div>
                 )}
               </>
